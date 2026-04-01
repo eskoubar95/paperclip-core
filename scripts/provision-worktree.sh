@@ -312,7 +312,9 @@ main().catch((error) => {
 EOF
 }
 
-if ! run_isolated_worktree_init; then
+if run_isolated_worktree_init; then
+  :
+else
   status=$?
   if [[ "$status" -ne 127 ]]; then
     exit "$status"

@@ -378,6 +378,14 @@ describe("worktree helpers", () => {
         const sourceConfig = buildSourceConfig();
         sourceConfig.database = {
           mode: "postgres",
+          embeddedPostgresDataDir: path.join(sourceConfigDir, "db"),
+          embeddedPostgresPort: 54329,
+          backup: {
+            enabled: true,
+            intervalMinutes: 60,
+            retentionDays: 30,
+            dir: path.join(sourceConfigDir, "backups"),
+          },
           connectionString: sourceDb.connectionString,
         };
         sourceConfig.logging.logDir = path.join(sourceConfigDir, "logs");
