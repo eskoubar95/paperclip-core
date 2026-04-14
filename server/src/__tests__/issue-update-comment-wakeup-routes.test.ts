@@ -29,6 +29,10 @@ vi.mock("../services/index.js", () => ({
   }),
   agentService: () => ({
     getById: vi.fn(async () => null),
+    resolveByReference: vi.fn(async (_companyId: string, raw: string) => ({
+      ambiguous: false,
+      agent: { id: raw },
+    })),
   }),
   documentService: () => ({}),
   executionWorkspaceService: () => ({}),
@@ -66,6 +70,10 @@ function registerModuleMocks() {
     }),
     agentService: () => ({
       getById: vi.fn(async () => null),
+      resolveByReference: vi.fn(async (_companyId: string, raw: string) => ({
+        ambiguous: false,
+        agent: { id: raw },
+      })),
     }),
     documentService: () => ({}),
     executionWorkspaceService: () => ({}),
