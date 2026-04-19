@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
 import { agents as agentsTable, companies, heartbeatRuns, issues as issuesTable } from "@paperclipai/db";
@@ -74,8 +74,19 @@ import {
   resolveDefaultAgentInstructionsBundleRole,
 } from "../services/default-agent-instructions.js";
 import { getTelemetryClient } from "../telemetry.js";
+import multer from "multer";
+import sharp from "sharp";
+import type { StorageService } from "../storage/types.js";
+import { assetService } from "../services/assets.js";
+import { isAllowedContentType } from "../attachment-types.js";
 
-export function agentRoutes(db: Db) {
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
+const AVATAR_UPLOAD = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: AVATAR_MAX_BYTES, files: 1 },
+});
+
+export function agentRoutes(db: Db, storage: StorageService) {
   // Legacy hardcoded maps — used as fallback when adapter module does not
   // declare capability flags explicitly.
   const DEFAULT_INSTRUCTIONS_PATH_KEYS: Record<string, string> = {
@@ -116,6 +127,7 @@ export function agentRoutes(db: Db) {
 
   const router = Router();
   const svc = agentService(db);
+  const assetsSvc = assetService(db);
   const access = accessService(db);
   const approvalsSvc = approvalService(db);
   const budgets = budgetService(db);
@@ -775,6 +787,8 @@ export function agentRoutes(db: Db) {
       name: agent.name,
       role: agent.role,
       title: agent.title,
+      icon: agent.icon,
+      avatarUrl: agent.avatarUrl,
       status: agent.status,
       reportsTo: agent.reportsTo,
       adapterType: agent.adapterType,
@@ -1220,6 +1234,189 @@ export function agentRoutes(db: Db) {
       return;
     }
     res.json(await buildAgentDetail(agent));
+  });
+
+  async function removeAgentAvatarRecord(raw: typeof agentsTable.$inferSelect) {
+    const prevAssetId = raw.avatarAssetId;
+    const prevObjectKey = prevAssetId
+      ? (await assetsSvc.getById(prevAssetId))?.objectKey ?? null
+      : null;
+    if (prevAssetId && prevObjectKey) {
+      try {
+        await storage.deleteObject(raw.companyId, prevObjectKey);
+      } catch {
+        // best-effort
+      }
+      await assetsSvc.deleteById(prevAssetId);
+    }
+  }
+
+  router.post("/agents/:id/avatar", async (req, res, next) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    await assertCanUpdateAgent(req, existing);
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        AVATAR_UPLOAD.single("file")(req, res, (err: unknown) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+    } catch (err) {
+      const code = err && typeof err === "object" && "code" in err ? String((err as { code: string }).code) : "";
+      if (code === "LIMIT_FILE_SIZE") {
+        res.status(422).json({ error: `Avatar exceeds ${AVATAR_MAX_BYTES} bytes` });
+        return;
+      }
+      if (code) {
+        res.status(400).json({ error: String((err as Error).message) });
+        return;
+      }
+      throw err;
+    }
+
+    const file = (req as Request & { file?: { mimetype: string; buffer: Buffer; originalname: string } }).file;
+    if (!file) {
+      res.status(400).json({ error: "Missing file field 'file'" });
+      return;
+    }
+
+    const contentType = (file.mimetype || "").toLowerCase();
+    if (!isAllowedContentType(contentType) || !contentType.startsWith("image/")) {
+      res.status(422).json({ error: `Unsupported image type: ${contentType || "unknown"}` });
+      return;
+    }
+
+    let jpegBuffer: Buffer;
+    try {
+      jpegBuffer = await sharp(file.buffer)
+        .rotate()
+        .resize(512, 512, { fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 88 })
+        .toBuffer();
+    } catch {
+      res.status(422).json({ error: "Could not process image" });
+      return;
+    }
+
+    const rawRow = await db
+      .select()
+      .from(agentsTable)
+      .where(eq(agentsTable.id, id))
+      .then((rows) => rows[0] ?? null);
+    if (!rawRow) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+
+    const accessToken = randomBytes(24).toString("hex");
+
+    await removeAgentAvatarRecord(rawRow);
+
+    const stored = await storage.putFile({
+      companyId: rawRow.companyId,
+      namespace: "agents/avatars",
+      originalFilename: file.originalname || "avatar.jpg",
+      contentType: "image/jpeg",
+      body: jpegBuffer,
+    });
+
+    const actorInfo = getActorInfo(req);
+    const asset = await assetsSvc.create(rawRow.companyId, {
+      provider: stored.provider,
+      objectKey: stored.objectKey,
+      contentType: stored.contentType,
+      byteSize: stored.byteSize,
+      sha256: stored.sha256,
+      originalFilename: stored.originalFilename ?? "avatar.jpg",
+      createdByAgentId: actorInfo.agentId ?? null,
+      createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
+    });
+
+    await db
+      .update(agentsTable)
+      .set({
+        avatarAssetId: asset.id,
+        avatarAccessToken: accessToken,
+        updatedAt: new Date(),
+      })
+      .where(eq(agentsTable.id, id));
+
+    const updated = await svc.getById(id);
+    if (!updated) {
+      res.status(500).json({ error: "Agent update failed" });
+      return;
+    }
+
+    await logActivity(db, {
+      companyId: updated.companyId,
+      actorType: actorInfo.actorType,
+      actorId: actorInfo.actorId,
+      agentId: actorInfo.agentId,
+      runId: actorInfo.runId,
+      action: "agent.avatar_updated",
+      entityType: "agent",
+      entityId: updated.id,
+      details: {},
+    });
+
+    res.json(await buildAgentDetail(updated));
+  });
+
+  router.delete("/agents/:id/avatar", async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    await assertCanUpdateAgent(req, existing);
+
+    const rawRow = await db
+      .select()
+      .from(agentsTable)
+      .where(eq(agentsTable.id, id))
+      .then((rows) => rows[0] ?? null);
+    if (!rawRow) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+
+    await removeAgentAvatarRecord(rawRow);
+    await db
+      .update(agentsTable)
+      .set({
+        avatarAssetId: null,
+        avatarAccessToken: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(agentsTable.id, id));
+
+    const updated = await svc.getById(id);
+    if (!updated) {
+      res.status(500).json({ error: "Agent update failed" });
+      return;
+    }
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: updated.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "agent.avatar_removed",
+      entityType: "agent",
+      entityId: updated.id,
+      details: {},
+    });
+
+    res.json(await buildAgentDetail(updated));
   });
 
   router.get("/agents/:id/configuration", async (req, res) => {

@@ -117,6 +117,13 @@ export const agentsApi = {
     api.post<AgentHireResponse>(`/companies/${companyId}/agent-hires`, data),
   update: (id: string, data: Record<string, unknown>, companyId?: string) =>
     api.patch<Agent>(agentPath(id, companyId), data),
+  uploadAvatar: (id: string, file: File, companyId?: string) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api.postForm<AgentDetail>(agentPath(id, companyId, "/avatar"), fd);
+  },
+  deleteAvatar: (id: string, companyId?: string) =>
+    api.delete<AgentDetail>(agentPath(id, companyId, "/avatar")),
   updatePermissions: (id: string, data: AgentPermissionUpdate, companyId?: string) =>
     api.patch<AgentDetail>(agentPath(id, companyId, "/permissions"), data),
   instructionsBundle: (id: string, companyId?: string) =>

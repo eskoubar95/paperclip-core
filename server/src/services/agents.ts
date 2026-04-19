@@ -204,9 +204,11 @@ export function agentService(db: Db) {
   }
 
   function normalizeAgentRow(row: typeof agents.$inferSelect) {
+    const { avatarAssetId: _avatarAssetId, avatarAccessToken, ...rest } = row;
     return withUrlKey({
-      ...row,
+      ...rest,
       permissions: normalizeAgentPermissions(row.permissions, row.role),
+      avatarUrl: avatarAccessToken ? `/api/public/agent-avatars/${avatarAccessToken}` : null,
     });
   }
 

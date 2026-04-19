@@ -9,6 +9,7 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
+import { assets } from "./assets.js";
 
 export const agents = pgTable(
   "agents",
@@ -19,6 +20,8 @@ export const agents = pgTable(
     role: text("role").notNull().default("general"),
     title: text("title"),
     icon: text("icon"),
+    avatarAssetId: uuid("avatar_asset_id").references(() => assets.id, { onDelete: "set null" }),
+    avatarAccessToken: text("avatar_access_token").unique(),
     status: text("status").notNull().default("idle"),
     reportsTo: uuid("reports_to").references((): AnyPgColumn => agents.id),
     capabilities: text("capabilities"),

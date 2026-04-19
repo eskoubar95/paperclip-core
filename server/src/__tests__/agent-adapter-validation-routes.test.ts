@@ -2,6 +2,7 @@ import express from "express";
 import request from "supertest";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerAdapterModule } from "../adapters/index.js";
+import { testStorageService } from "./test-storage-service.js";
 
 const mockAgentService = vi.hoisted(() => ({
   create: vi.fn(),
@@ -131,7 +132,7 @@ async function createApp() {
     };
     next();
   });
-  app.use("/api", agentRoutes({} as any));
+  app.use("/api", agentRoutes({} as any, testStorageService));
   app.use(errorHandler);
   return app;
 }

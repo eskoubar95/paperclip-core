@@ -821,6 +821,30 @@ export function AgentDetail() {
     },
   });
 
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadAvatar = useMutation({
+    mutationFn: (file: File) => agentsApi.uploadAvatar(agentLookupRef, file, resolvedCompanyId ?? undefined),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(routeAgentRef) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentLookupRef) });
+      if (resolvedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(resolvedCompanyId) });
+      }
+    },
+  });
+
+  const deleteAvatar = useMutation({
+    mutationFn: () => agentsApi.deleteAvatar(agentLookupRef, resolvedCompanyId ?? undefined),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(routeAgentRef) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentLookupRef) });
+      if (resolvedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(resolvedCompanyId) });
+      }
+    },
+  });
+
   const resetTaskSession = useMutation({
     mutationFn: (taskKey: string | null) =>
       agentsApi.resetSession(agentLookupRef, taskKey, resolvedCompanyId ?? undefined),
@@ -906,14 +930,45 @@ export function AgentDetail() {
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-3 min-w-0">
+          <input
+            ref={avatarFileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) uploadAvatar.mutate(file);
+            }}
+          />
           <AgentIconPicker
             value={agent.icon}
             onChange={(icon) => updateIcon.mutate(icon)}
           >
-            <button className="shrink-0 flex items-center justify-center h-12 w-12 rounded-lg bg-accent hover:bg-accent/80 transition-colors">
-              <AgentIcon icon={agent.icon} className="h-6 w-6" />
+            <button className="shrink-0 flex items-center justify-center h-12 w-12 rounded-lg bg-accent hover:bg-accent/80 transition-colors overflow-hidden">
+              <AgentIcon icon={agent.icon} avatarUrl={agent.avatarUrl} className="h-6 w-6" />
             </button>
           </AgentIconPicker>
+          <div className="flex flex-col gap-0.5 text-xs">
+            <button
+              type="button"
+              className="text-left text-primary hover:underline disabled:opacity-50"
+              disabled={uploadAvatar.isPending}
+              onClick={() => avatarFileInputRef.current?.click()}
+            >
+              {uploadAvatar.isPending ? "Uploading…" : "Upload avatar"}
+            </button>
+            {agent.avatarUrl ? (
+              <button
+                type="button"
+                className="text-left text-muted-foreground hover:text-foreground disabled:opacity-50"
+                disabled={deleteAvatar.isPending}
+                onClick={() => deleteAvatar.mutate()}
+              >
+                {deleteAvatar.isPending ? "Removing…" : "Remove avatar"}
+              </button>
+            ) : null}
+          </div>
           <div className="min-w-0">
             <h2 className="text-2xl font-bold truncate">{agent.name}</h2>
             <p className="text-sm text-muted-foreground truncate">

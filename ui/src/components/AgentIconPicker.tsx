@@ -16,10 +16,21 @@ const DEFAULT_ICON: AgentIconName = "bot";
 
 interface AgentIconProps {
   icon: string | null | undefined;
+  /** When set, shows uploaded image instead of Lucide preset icon. */
+  avatarUrl?: string | null;
   className?: string;
 }
 
-export function AgentIcon({ icon, className }: AgentIconProps) {
+export function AgentIcon({ icon, avatarUrl, className }: AgentIconProps) {
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt=""
+        className={cn("rounded-md object-cover aspect-square", className)}
+      />
+    );
+  }
   const Icon = getAgentIcon(icon);
   return <Icon className={className} />;
 }

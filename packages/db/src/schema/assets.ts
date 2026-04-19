@@ -1,6 +1,5 @@
 import { pgTable, uuid, text, integer, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
-import { agents } from "./agents.js";
 
 export const assets = pgTable(
   "assets",
@@ -13,7 +12,8 @@ export const assets = pgTable(
     byteSize: integer("byte_size").notNull(),
     sha256: text("sha256").notNull(),
     originalFilename: text("original_filename"),
-    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id),
+    /** Optional link to `agents.id` — FK may exist in DB; omitted here to avoid a circular schema import with `agents`. */
+    createdByAgentId: uuid("created_by_agent_id"),
     createdByUserId: text("created_by_user_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

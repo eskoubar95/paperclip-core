@@ -1968,6 +1968,19 @@ export function pluginRoutes(
     const parsedBody = req.body as unknown;
     const payload = (req.body as Record<string, unknown> | undefined) ?? {};
 
+    // Slack Events API URL verification must respond with `{ challenge }` immediately.
+    // The generic plugin RPC path returns a different JSON envelope, which breaks Slack verification.
+    if (
+      payload &&
+      typeof payload === "object" &&
+      !Array.isArray(payload) &&
+      (payload as { type?: unknown }).type === "url_verification" &&
+      typeof (payload as { challenge?: unknown }).challenge === "string"
+    ) {
+      res.status(200).json({ challenge: (payload as { challenge: string }).challenge });
+      return;
+    }
+
     // Step 6: Record the delivery in the database
     const startedAt = new Date();
     const [delivery] = await db

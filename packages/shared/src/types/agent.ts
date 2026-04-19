@@ -67,6 +67,8 @@ export interface Agent {
   role: AgentRole;
   title: string | null;
   icon: string | null;
+  /** Public relative URL for custom avatar image, or null if none. */
+  avatarUrl?: string | null;
   status: AgentStatus;
   reportsTo: string | null;
   capabilities: string | null;

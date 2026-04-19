@@ -723,6 +723,13 @@ export {
 } from "./routine-variables.js";
 
 export {
+  resolveSlackAgentAvatarUrl,
+  resolveSlackIconUrl,
+  SLACK_DEFAULT_AGENT_ICON_URL,
+  SLACK_PRESET_ICON_FALLBACK_URL,
+} from "./slack-agent-avatar.js";
+
+export {
   paperclipConfigSchema,
   configMetaSchema,
   llmConfigSchema,
