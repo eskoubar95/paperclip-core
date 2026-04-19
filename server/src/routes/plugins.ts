@@ -140,6 +140,15 @@ const BUNDLED_PLUGIN_EXAMPLES: AvailablePluginExample[] = [
     localPath: "packages/plugins/examples/plugin-kitchen-sink-example",
     tag: "example",
   },
+  {
+    packageName: "@paperclipai/plugin-paperclip-slack",
+    pluginKey: "paperclip-slack",
+    displayName: "Slack",
+    description:
+      "Slack Events API integration: URL verification, signing secret, app mentions and DMs, optional chat.postMessage with agent name/avatar, router agent invoke.",
+    localPath: "packages/plugins/paperclip-slack",
+    tag: "example",
+  },
 ];
 
 function listBundledPluginExamples(): AvailablePluginExample[] {
