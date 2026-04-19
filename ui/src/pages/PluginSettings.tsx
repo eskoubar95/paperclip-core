@@ -226,20 +226,32 @@ export function PluginSettings() {
                     />
                   ))}
                 </div>
-              ) : hasConfigSchema ? (
-                <PluginConfigForm
-                  pluginId={pluginId!}
-                  schema={configSchema!}
-                  initialValues={configData?.configJson}
-                  isLoading={configLoading}
-                  pluginStatus={plugin.status}
-                  supportsConfigTest={(plugin as unknown as { supportsConfigTest?: boolean }).supportsConfigTest === true}
-                />
-              ) : (
+              ) : null}
+              {hasConfigSchema ? (
+                <div className="space-y-4">
+                  {hasCustomSettingsPage ? (
+                    <>
+                      <Separator />
+                      <h3 className="text-sm font-medium text-muted-foreground">Instance configuration</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Save secret references and IDs here. Plugin-specific help appears above when the plugin provides a custom panel.
+                      </p>
+                    </>
+                  ) : null}
+                  <PluginConfigForm
+                    pluginId={pluginId!}
+                    schema={configSchema!}
+                    initialValues={configData?.configJson}
+                    isLoading={configLoading}
+                    pluginStatus={plugin.status}
+                    supportsConfigTest={(plugin as unknown as { supportsConfigTest?: boolean }).supportsConfigTest === true}
+                  />
+                </div>
+              ) : !hasCustomSettingsPage ? (
                 <p className="text-sm text-muted-foreground">
                   This plugin does not require any settings.
                 </p>
-              )}
+              ) : null}
             </section>
           </div>
         </TabsContent>

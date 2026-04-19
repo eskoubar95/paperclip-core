@@ -99,8 +99,10 @@ export function SlackSettingsPage({ context }: PluginSettingsPageProps) {
       </div>
 
       <p style={{ fontSize: 12, color: "var(--pc-muted-foreground, #666)" }}>
-        Signing secret and bot token must be stored as Paperclip secret references in instance config (not
-        pasted in plain text). Use the generated JSON Schema form fields on this page or the operator API.
+        Enter <strong>public API base</strong>, <strong>company</strong>, <strong>router agent</strong>, and
+        Slack <strong>secret references</strong> in the <strong>Instance configuration</strong> section below
+        (same page). Raw Slack tokens should live in your Paperclip secret store; this UI stores references, not
+        pasted production secrets, unless your deployment maps fields differently.
       </p>
     </section>
   );

@@ -55,14 +55,18 @@ const manifest: PaperclipPluginManifestV1 = {
       },
       signingSecretRef: {
         type: "string",
-        title: "Slack signing secret (secret ref)",
-        description: "Paperclip secret reference for the Signing Secret from the Slack app (Basic Information).",
+        format: "secret-ref",
+        title: "Slack signing secret",
+        description:
+          "Name of a Paperclip-stored secret whose value matches Slack → Basic Information → Signing Secret. Create the secret in your instance secret provider first, then enter its reference name here.",
         default: "",
       },
       botTokenRef: {
         type: "string",
-        title: "Bot token (secret ref)",
-        description: "Paperclip secret reference for the Bot User OAuth Token (xoxb-...).",
+        format: "secret-ref",
+        title: "Slack bot token",
+        description:
+          "Secret reference for the Bot User OAuth Token (xoxb-…) from Slack OAuth install — not the raw token in this field unless your deployment stores it that way.",
         default: "",
       },
     },
