@@ -189,7 +189,7 @@ function RoutineListRow({
 }: {
   routine: RoutineListItem;
   projectById: Map<string, { name: string; color?: string | null }>;
-  agentById: Map<string, { name: string; icon?: string | null }>;
+  agentById: Map<string, { name: string; icon?: string | null; avatarUrl?: string | null }>;
   runningRoutineId: string | null;
   statusMutationRoutineId: string | null;
   href: string;
