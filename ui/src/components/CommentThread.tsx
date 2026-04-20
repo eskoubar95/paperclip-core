@@ -740,6 +740,7 @@ export function CommentThread({
         kind: "agent",
         agentId: a.id,
         agentIcon: a.icon,
+        agentAvatarUrl: a.avatarUrl,
       }));
   }, [agentMap, providedMentions]);
 
@@ -960,7 +961,11 @@ export function CommentThread({
                   return (
                     <>
                       {agent ? (
-                        <AgentIcon icon={agent.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <AgentIcon
+                          icon={agent.icon}
+                          avatarUrl={agent.avatarUrl}
+                          className="h-3.5 w-3.5 shrink-0 rounded-[3px] object-cover text-muted-foreground"
+                        />
                       ) : null}
                       <span className="truncate">{option.label}</span>
                     </>
@@ -973,7 +978,11 @@ export function CommentThread({
                   return (
                     <>
                       {agent ? (
-                        <AgentIcon icon={agent.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <AgentIcon
+                          icon={agent.icon}
+                          avatarUrl={agent.avatarUrl}
+                          className="h-3.5 w-3.5 shrink-0 rounded-[3px] object-cover text-muted-foreground"
+                        />
                       ) : null}
                       <span className="truncate">{option.label}</span>
                     </>

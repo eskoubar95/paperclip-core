@@ -1119,7 +1119,11 @@ export function NewIssueDialog() {
                   option ? (
                     currentAssignee ? (
                       <>
-                        <AgentIcon icon={currentAssignee.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <AgentIcon
+                          icon={currentAssignee.icon}
+                          avatarUrl={currentAssignee.avatarUrl}
+                          className="h-3.5 w-3.5 shrink-0 rounded-[3px] object-cover text-muted-foreground"
+                        />
                         <span className="truncate">{option.label}</span>
                       </>
                     ) : (
@@ -1136,7 +1140,13 @@ export function NewIssueDialog() {
                     : null;
                   return (
                     <>
-                      {assignee ? <AgentIcon icon={assignee.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
+                      {assignee ? (
+                        <AgentIcon
+                          icon={assignee.icon}
+                          avatarUrl={assignee.avatarUrl}
+                          className="h-3.5 w-3.5 shrink-0 rounded-[3px] object-cover text-muted-foreground"
+                        />
+                      ) : null}
                       <span className="truncate">{option.label}</span>
                     </>
                   );
@@ -1249,7 +1259,13 @@ export function NewIssueDialog() {
                         const reviewer = parseAssigneeValue(option.id).assigneeAgentId
                           ? (agents ?? []).find((a) => a.id === parseAssigneeValue(option.id).assigneeAgentId)
                           : null;
-                        return reviewer ? <AgentIcon icon={reviewer.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null;
+                        return reviewer ? (
+                          <AgentIcon
+                            icon={reviewer.icon}
+                            avatarUrl={reviewer.avatarUrl}
+                            className="h-3.5 w-3.5 shrink-0 rounded-[3px] object-cover text-muted-foreground"
+                          />
+                        ) : null;
                       })()}
                       <span className="truncate">{option.label}</span>
                     </>
@@ -1264,7 +1280,13 @@ export function NewIssueDialog() {
                     : null;
                   return (
                     <>
-                      {reviewer ? <AgentIcon icon={reviewer.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
+                      {reviewer ? (
+                        <AgentIcon
+                          icon={reviewer.icon}
+                          avatarUrl={reviewer.avatarUrl}
+                          className="h-3.5 w-3.5 shrink-0 rounded-[3px] object-cover text-muted-foreground"
+                        />
+                      ) : null}
                       <span className="truncate">{option.label}</span>
                     </>
                   );
@@ -1293,7 +1315,13 @@ export function NewIssueDialog() {
                         const approver = parseAssigneeValue(option.id).assigneeAgentId
                           ? (agents ?? []).find((a) => a.id === parseAssigneeValue(option.id).assigneeAgentId)
                           : null;
-                        return approver ? <AgentIcon icon={approver.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null;
+                        return approver ? (
+                          <AgentIcon
+                            icon={approver.icon}
+                            avatarUrl={approver.avatarUrl}
+                            className="h-3.5 w-3.5 shrink-0 rounded-[3px] object-cover text-muted-foreground"
+                          />
+                        ) : null;
                       })()}
                       <span className="truncate">{option.label}</span>
                     </>
@@ -1308,7 +1336,13 @@ export function NewIssueDialog() {
                     : null;
                   return (
                     <>
-                      {approver ? <AgentIcon icon={approver.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
+                      {approver ? (
+                        <AgentIcon
+                          icon={approver.icon}
+                          avatarUrl={approver.avatarUrl}
+                          className="h-3.5 w-3.5 shrink-0 rounded-[3px] object-cover text-muted-foreground"
+                        />
+                      ) : null}
                       <span className="truncate">{option.label}</span>
                     </>
                   );

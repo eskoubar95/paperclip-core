@@ -76,7 +76,7 @@ import {
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
-import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
+import { AgentIcon, ManageAgentAvatarDialog } from "../components/AgentIconPicker";
 import { RunTranscriptView, type TranscriptMode } from "../components/transcript/RunTranscriptView";
 import {
   isUuidLike,
@@ -628,6 +628,7 @@ export function AgentDetail() {
   const navigate = useNavigate();
   const [actionError, setActionError] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
   const activeView = urlRunId ? "runs" as AgentDetailView : parseAgentDetailView(urlTab ?? null);
   const needsDashboardData = activeView === "dashboard";
   const needsRunData = activeView === "runs" || Boolean(urlRunId);
@@ -821,8 +822,6 @@ export function AgentDetail() {
     },
   });
 
-  const avatarFileInputRef = useRef<HTMLInputElement>(null);
-
   const uploadAvatar = useMutation({
     mutationFn: (file: File) => agentsApi.uploadAvatar(agentLookupRef, file, resolvedCompanyId ?? undefined),
     onSuccess: () => {
@@ -930,45 +929,37 @@ export function AgentDetail() {
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-3 min-w-0">
-          <input
-            ref={avatarFileInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = "";
-              if (file) uploadAvatar.mutate(file);
-            }}
-          />
-          <AgentIconPicker
-            value={agent.icon}
-            onChange={(icon) => updateIcon.mutate(icon)}
-          >
-            <button className="shrink-0 flex items-center justify-center h-12 w-12 rounded-lg bg-accent hover:bg-accent/80 transition-colors overflow-hidden">
-              <AgentIcon icon={agent.icon} avatarUrl={agent.avatarUrl} className="h-6 w-6" />
-            </button>
-          </AgentIconPicker>
-          <div className="flex flex-col gap-0.5 text-xs">
+          <div className="group relative shrink-0 h-12 w-12 rounded-lg overflow-hidden bg-muted ring-1 ring-border/60">
             <button
               type="button"
-              className="text-left text-primary hover:underline disabled:opacity-50"
-              disabled={uploadAvatar.isPending}
-              onClick={() => avatarFileInputRef.current?.click()}
+              className="absolute inset-0 flex items-center justify-center"
+              onClick={() => setAvatarDialogOpen(true)}
+              aria-label="Edit profile picture"
             >
-              {uploadAvatar.isPending ? "Uploading…" : "Upload avatar"}
-            </button>
-            {agent.avatarUrl ? (
-              <button
-                type="button"
-                className="text-left text-muted-foreground hover:text-foreground disabled:opacity-50"
-                disabled={deleteAvatar.isPending}
-                onClick={() => deleteAvatar.mutate()}
+              <AgentIcon
+                icon={agent.icon}
+                avatarUrl={agent.avatarUrl}
+                className="h-full w-full rounded-lg object-cover"
+              />
+              <span
+                className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity group-hover:opacity-100 rounded-lg"
+                aria-hidden
               >
-                {deleteAvatar.isPending ? "Removing…" : "Remove avatar"}
-              </button>
-            ) : null}
+                <span className="text-[11px] font-semibold text-white shadow-sm">Edit</span>
+              </span>
+            </button>
           </div>
+          <ManageAgentAvatarDialog
+            open={avatarDialogOpen}
+            onOpenChange={setAvatarDialogOpen}
+            icon={agent.icon}
+            avatarUrl={agent.avatarUrl}
+            onSelectIcon={(icon) => updateIcon.mutate(icon)}
+            onUploadFile={(file) => uploadAvatar.mutate(file)}
+            onRemoveAvatar={() => deleteAvatar.mutate()}
+            uploadPending={uploadAvatar.isPending}
+            removePending={deleteAvatar.isPending}
+          />
           <div className="min-w-0">
             <h2 className="text-2xl font-bold truncate">{agent.name}</h2>
             <p className="text-sm text-muted-foreground truncate">

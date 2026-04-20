@@ -117,8 +117,17 @@ export function SidebarAgents() {
                     : "text-foreground/80 hover:bg-accent/50 hover:text-foreground"
                 )}
               >
-                <AgentIcon icon={agent.icon} className="shrink-0 h-3.5 w-3.5 text-muted-foreground" />
-                <span className="flex-1 truncate">{agent.name}</span>
+                <AgentIcon
+                  icon={agent.icon}
+                  avatarUrl={agent.avatarUrl}
+                  className="shrink-0 h-3.5 w-3.5 rounded-[3px] object-cover text-muted-foreground"
+                />
+                <span className="min-w-0 flex-1 truncate">
+                  <span className="font-medium">{agent.name}</span>
+                  {agent.title ? (
+                    <span className="text-muted-foreground font-normal"> · {agent.title}</span>
+                  ) : null}
+                </span>
                 {(agent.pauseReason === "budget" || runCount > 0) && (
                   <span className="ml-auto flex items-center gap-1.5 shrink-0">
                     {agent.pauseReason === "budget" ? (

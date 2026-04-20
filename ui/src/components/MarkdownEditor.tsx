@@ -51,6 +51,7 @@ export interface MentionOption {
   kind?: "agent" | "project" | "user";
   agentId?: string;
   agentIcon?: string | null;
+  agentAvatarUrl?: string | null;
   projectId?: string;
   projectColor?: string | null;
   userId?: string;
@@ -1148,7 +1149,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                 ) : (
                   <AgentIcon
                     icon={option.agentIcon}
-                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                    avatarUrl={option.agentAvatarUrl}
+                    className="h-3.5 w-3.5 shrink-0 rounded-[3px] object-cover text-muted-foreground"
                   />
                 )}
                 <span>{option.kind === "skill" ? `/${option.slug}` : option.name}</span>

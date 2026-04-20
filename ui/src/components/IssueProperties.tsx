@@ -452,7 +452,7 @@ export function IssueProperties({
   );
 
   const assigneeTrigger = assignee ? (
-    <Identity name={assignee.name} size="sm" />
+    <Identity name={assignee.name} avatarUrl={assignee.avatarUrl} size="sm" />
   ) : assigneeUserLabel ? (
     <>
       <User className="h-3.5 w-3.5 text-muted-foreground" />
@@ -554,8 +554,15 @@ export function IssueProperties({
             )}
             onClick={() => { trackRecentAssignee(a.id); onUpdate({ assigneeAgentId: a.id, assigneeUserId: null }); setAssigneeOpen(false); }}
           >
-            <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
-            {a.name}
+            <AgentIcon
+              icon={a.icon}
+              avatarUrl={a.avatarUrl}
+              className="shrink-0 h-3 w-3 rounded-[3px] object-cover text-muted-foreground"
+            />
+            <span className="min-w-0 flex-1 truncate text-left">
+              <span>{a.name}</span>
+              {a.title ? <span className="text-muted-foreground"> · {a.title}</span> : null}
+            </span>
           </button>
         ))}
       </div>
@@ -645,8 +652,15 @@ export function IssueProperties({
                 )}
                 onClick={() => toggleExecutionParticipant(stageType, encoded)}
               >
-                <AgentIcon icon={agent.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
-                {agent.name}
+                <AgentIcon
+                  icon={agent.icon}
+                  avatarUrl={agent.avatarUrl}
+                  className="shrink-0 h-3 w-3 rounded-[3px] object-cover text-muted-foreground"
+                />
+                <span className="min-w-0 flex-1 truncate text-left">
+                  <span>{agent.name}</span>
+                  {agent.title ? <span className="text-muted-foreground"> · {agent.title}</span> : null}
+                </span>
               </button>
             );
           })}
