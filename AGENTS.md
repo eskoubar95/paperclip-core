@@ -32,33 +32,26 @@ Before making changes, read in this order:
 - `doc/`: operational and product docs
 - `docs/`: additional technical notes (e.g. project governance handoff: `docs/AGENT_HANDOFF_PROJECT_GOVERNANCE_V1.md`)
 
-## 4. Dev Setup (Auto DB)
+## 4. Dev Setup and database target
 
-Use embedded PGlite in dev by leaving `DATABASE_URL` unset.
+From **`paperclip/`** (this repo):
 
 ```sh
 pnpm install
 pnpm dev
 ```
 
-This starts:
+Default **API + UI** (dev): `http://127.0.0.1:3100` (or the next free port if busy — see `PORT` in logs).
 
-- API: `http://localhost:3100`
-- UI: `http://localhost:3100` (served by API server in dev middleware mode)
+`DATABASE_URL` and embedded vs external Postgres are documented in **`doc/DATABASE.md`** and **`doc/DEVELOPING.md`**. In short: if `DATABASE_URL` is set (env or `~/.paperclip/instances/<id>/.env`), the server uses **external Postgres**; otherwise it may use **embedded PostgreSQL** (paths under `~/.paperclip/instances/.../db` on the host). There is no PGlite in this fork’s default dev path.
 
 Quick checks:
 
 ```sh
 curl http://localhost:3100/api/health
-curl http://localhost:3100/api/companies
 ```
 
-Reset local dev DB:
-
-```sh
-rm -rf data/pglite
-pnpm dev
-```
+**Parent “wrapper” repo** (Docker, Windows launcher): if you run Paperclip in **Docker** on Windows, use the parent repo’s `scripts/windows/start-paperclip.ps1` so the instance directory (and `.env`) is bind-mounted; see parent `docs/BUILD.md` and `AGENTS.md`.
 
 ## 5. Core Engineering Rules
 
