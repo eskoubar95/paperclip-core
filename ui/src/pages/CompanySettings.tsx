@@ -6,6 +6,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useToastActions } from "../context/ToastContext";
 import { companiesApi } from "../api/companies";
+import { ApiError } from "../api/client";
 import { accessApi } from "../api/access";
 import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
@@ -31,7 +32,9 @@ export function CompanySettings() {
     companies,
     selectedCompany,
     selectedCompanyId,
-    setSelectedCompanyId
+    setSelectedCompanyId,
+    loading: companiesLoading,
+    error: companiesError,
   } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToastActions();
@@ -229,10 +232,36 @@ export function CompanySettings() {
     ]);
   }, [setBreadcrumbs, selectedCompany?.name]);
 
+  if (companiesLoading) {
+    return <div className="text-sm text-muted-foreground">Loading companies…</div>;
+  }
+
+  if (companiesError) {
+    const status = companiesError instanceof ApiError ? companiesError.status : null;
+    const detail =
+      status === 403 || status === 401
+        ? " The API rejected this session (often: deployment mode is authenticated but you are not signed in). For local Docker, use the Windows launcher with PAPERCLIP_DEPLOYMENT_MODE=local_trusted, or sign in at /auth."
+        : "";
+    return (
+      <div className="max-w-xl space-y-2 text-sm text-destructive">
+        <p>Could not load companies: {companiesError.message}.{detail}</p>
+      </div>
+    );
+  }
+
   if (!selectedCompany) {
+    if (companies.length === 0) {
+      return (
+        <div className="text-sm text-muted-foreground">
+          No companies found for this instance. If the database is correct, create a company or check that your account
+          has membership. If the company list is empty but you are signed in, verify{" "}
+          <code className="text-xs">DATABASE_URL</code> points at the same Postgres you expect.
+        </div>
+      );
+    }
     return (
       <div className="text-sm text-muted-foreground">
-        No company selected. Select a company from the switcher above.
+        No company selected. Select a company from the switcher in the top bar.
       </div>
     );
   }
