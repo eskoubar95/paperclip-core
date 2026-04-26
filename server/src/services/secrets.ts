@@ -5,6 +5,7 @@ import type { AgentEnvConfig, EnvBinding, SecretProvider } from "@paperclipai/sh
 import { envBindingSchema } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { getSecretProvider, listSecretProviders } from "../secrets/provider-registry.js";
+import { getCompanyGithubEnvBindingsForRuntime } from "./company-github.js";
 
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SENSITIVE_ENV_KEY_RE =
@@ -346,18 +347,38 @@ export function secretService(db: Db) {
     },
 
     resolveAdapterConfigForRuntime: async (companyId: string, adapterConfig: Record<string, unknown>): Promise<{ config: Record<string, unknown>; secretKeys: Set<string> }> => {
-      const resolved = { ...adapterConfig };
       const secretKeys = new Set<string>();
-      if (!Object.prototype.hasOwnProperty.call(adapterConfig, "env")) {
-        return { config: resolved, secretKeys };
+      const companyGithubEnv = await getCompanyGithubEnvBindingsForRuntime(db, companyId);
+      const hasEnvProperty = Object.prototype.hasOwnProperty.call(adapterConfig, "env");
+
+      if (!hasEnvProperty && Object.keys(companyGithubEnv).length === 0) {
+        return { config: { ...adapterConfig }, secretKeys };
       }
-      const record = asRecord(adapterConfig.env);
-      if (!record) {
-        resolved.env = {};
-        return { config: resolved, secretKeys };
+
+      let agentBindings: Record<string, unknown> = {};
+      if (hasEnvProperty) {
+        const agentRecord = asRecord(adapterConfig.env);
+        if (
+          adapterConfig.env !== undefined &&
+          adapterConfig.env !== null &&
+          !agentRecord
+        ) {
+          agentBindings = {};
+        } else {
+          agentBindings = agentRecord ?? {};
+        }
       }
+
+      const mergedBindings = { ...companyGithubEnv, ...agentBindings };
+
+      if (Object.keys(mergedBindings).length === 0) {
+        const out = { ...adapterConfig };
+        if (hasEnvProperty) out.env = {};
+        return { config: out, secretKeys };
+      }
+
       const env: Record<string, string> = {};
-      for (const [key, rawBinding] of Object.entries(record)) {
+      for (const [key, rawBinding] of Object.entries(mergedBindings)) {
         if (!ENV_KEY_RE.test(key)) {
           throw unprocessable(`Invalid environment variable name: ${key}`);
         }
@@ -373,8 +394,7 @@ export function secretService(db: Db) {
           secretKeys.add(key);
         }
       }
-      resolved.env = env;
-      return { config: resolved, secretKeys };
+      return { config: { ...adapterConfig, env }, secretKeys };
     },
   };
 }

@@ -18,6 +18,7 @@ import { listCurrentRuntimeServicesForProjectWorkspaces } from "./workspace-runt
 import { parseProjectExecutionWorkspacePolicy } from "./execution-workspace-policy.js";
 import { mergeProjectWorkspaceRuntimeConfig, readProjectWorkspaceRuntimeConfig } from "./project-workspace-runtime-config.js";
 import { resolveManagedProjectWorkspaceDir } from "../home-paths.js";
+import { assertWorkspaceRepoUrlAllowedForCompany } from "./company-github.js";
 
 type ProjectRow = typeof projects.$inferSelect;
 type ProjectWorkspaceRow = typeof projectWorkspaces.$inferSelect;
@@ -580,6 +581,8 @@ export function projectService(db: Db) {
         repoUrl,
       });
 
+      await assertWorkspaceRepoUrlAllowedForCompany(db, project.companyId, repoUrl);
+
       const existing = await db
         .select()
         .from(projectWorkspaces)
@@ -673,6 +676,8 @@ export function projectService(db: Db) {
       } else if (!nextCwd && !nextRepoUrl) {
         return null;
       }
+
+      await assertWorkspaceRepoUrlAllowedForCompany(db, existing.companyId, nextRepoUrl);
 
       const patch: Partial<typeof projectWorkspaces.$inferInsert> = {
         updatedAt: new Date(),

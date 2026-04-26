@@ -414,6 +414,20 @@
       "when": 1776400000000,
       "tag": "0058_agent_avatar",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1776480000000,
+      "tag": "0059_shared_agent_knowledge",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1776560000000,
+      "tag": "0060_company_github_integrations",
+      "breakpoints": true
     }
   ]
 }

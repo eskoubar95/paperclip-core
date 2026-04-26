@@ -76,6 +76,7 @@ import {
   writePaperclipSkillSyncPreference,
 } from "@paperclipai/adapter-utils/server-utils";
 import { extractSkillMentionIds } from "@paperclipai/shared";
+import { sharedKnowledgeService } from "./shared-knowledge.js";
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const MAX_PERSISTED_LOG_CHUNK_CHARS = 64 * 1024;
@@ -1489,6 +1490,7 @@ function resolveNextSessionState(input: {
 
 export function heartbeatService(db: Db) {
   const instanceSettings = instanceSettingsService(db);
+  const sharedKnowledge = sharedKnowledgeService(db);
   const getCurrentUserRedactionOptions = async () => ({
     enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
   });
@@ -3852,6 +3854,22 @@ export function heartbeatService(db: Db) {
         });
       };
 
+      if (sharedKnowledge.isEnabled()) {
+        try {
+          const pack = await sharedKnowledge.buildContextPackForRun({
+            companyId: agent.companyId,
+            agentId: agent.id,
+            issueId,
+            projectId: resolvedProjectId,
+          });
+          if (pack) {
+            context.paperclipSharedKnowledge = pack;
+          }
+        } catch (err) {
+          logger.warn({ err, runId: run.id }, "failed to build shared knowledge context pack");
+        }
+      }
+
       const adapter = getServerAdapter(agent.adapterType);
       const authToken = adapter.supportsLocalAgentJwt
         ? createLocalAgentJwt(agent.id, agent.companyId, agent.adapterType, run.id)
@@ -4036,6 +4054,24 @@ export function heartbeatService(db: Db) {
         logSha256: logSummary?.sha256,
         logCompressed: logSummary?.compressed ?? false,
       });
+
+      if (sharedKnowledge.isEnabled() && (outcome === "succeeded" || outcome === "failed")) {
+        void sharedKnowledge
+          .recordRunSummary({
+            companyId: agent.companyId,
+            agentId: agent.id,
+            heartbeatRunId: run.id,
+            issueId,
+            projectId: resolvedProjectId,
+            adapterType: agent.adapterType,
+            outcome,
+            resultJson: persistedResultJson,
+            usageJson: (usageJson ?? null) as Record<string, unknown> | null,
+          })
+          .catch((err) => {
+            logger.warn({ err, runId: run.id }, "failed to record shared run summary");
+          });
+      }
 
       await setWakeupStatus(run.wakeupRequestId, outcome === "succeeded" ? "completed" : status, {
         finishedAt: new Date(),

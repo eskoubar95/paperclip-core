@@ -74,7 +74,11 @@ Operational fields:
 - timeoutSec (number, optional): run timeout in seconds
 - graceSec (number, optional): SIGTERM grace period in seconds
 
+Paperclip may inject:
+- context.paperclipSharedKnowledge (string): markdown from Paperclip shared knowledge (run summaries + durable items). Prepended to the run prompt when present.
+
 Notes:
+- The CLI entrypoint is the command `agent` (not `cursor` or `cursor-agent`). Default config: command = "agent". Verify with: `agent --version`.
 - Runs are executed with: agent -p --output-format stream-json ...
 - Prompts are piped to Cursor via stdin.
 - Sessions are resumed with --resume when stored session cwd matches current cwd.

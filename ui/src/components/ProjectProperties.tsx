@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Project } from "@paperclipai/shared";
@@ -8,6 +8,8 @@ import { goalsApi } from "../api/goals";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { projectsApi } from "../api/projects";
 import { secretsApi } from "../api/secrets";
+import { companyGithubApi } from "../api/company-github";
+import { ApiError } from "../api/client";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { statusBadge, statusBadgeDefault } from "../lib/status-colors";
@@ -248,6 +250,28 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     queryFn: () => instanceSettingsApi.getExperimental(),
     retry: false,
   });
+  const { data: githubIntegration } = useQuery({
+    queryKey: selectedCompanyId ? queryKeys.companyGithub.integration(selectedCompanyId) : ["company-github", "na"],
+    queryFn: () => companyGithubApi.getIntegration(selectedCompanyId!),
+    enabled: Boolean(selectedCompanyId) && workspaceMode === "repo",
+  });
+  const {
+    data: githubRepos = [],
+    isError: githubReposError,
+    error: githubReposErr,
+  } = useQuery({
+    queryKey: selectedCompanyId ? queryKeys.companyGithub.repos(selectedCompanyId) : ["company-github-repos", "na"],
+    queryFn: () => companyGithubApi.listRepos(selectedCompanyId!),
+    enabled: Boolean(selectedCompanyId) && workspaceMode === "repo" && githubIntegration?.configured === true,
+    staleTime: 60_000,
+  });
+  const pickerRepos = useMemo(() => {
+    if (!githubRepos.length) return [];
+    const allowed = githubIntegration?.allowedRepoFullNames ?? [];
+    if (allowed.length === 0) return githubRepos;
+    const allow = new Set(allowed.map((x) => x.toLowerCase()));
+    return githubRepos.filter((r) => allow.has(r.fullName.toLowerCase()));
+  }, [githubRepos, githubIntegration?.allowedRepoFullNames]);
   const { data: availableSecrets = [] } = useQuery({
     queryKey: selectedCompanyId ? queryKeys.secrets.list(selectedCompanyId) : ["secrets", "none"],
     queryFn: () => secretsApi.list(selectedCompanyId!),
@@ -847,6 +871,36 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
           )}
           {workspaceMode === "repo" && (
             <div className="space-y-1.5 rounded-md border border-border p-2">
+              {githubIntegration?.configured && pickerRepos.length > 0 ? (
+                <div className="space-y-1">
+                  <div className="text-[11px] text-muted-foreground">Repository (company allowlist)</div>
+                  <select
+                    className="w-full rounded border border-border bg-background px-2 py-1 text-xs outline-none"
+                    value={
+                      pickerRepos.some((r) => r.htmlUrl === workspaceRepoUrl.trim()) ? workspaceRepoUrl.trim() : ""
+                    }
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v) setWorkspaceRepoUrl(v);
+                    }}
+                  >
+                    <option value="">Custom URL (type below)…</option>
+                    {pickerRepos.map((r) => (
+                      <option key={r.fullName} value={r.htmlUrl}>
+                        {r.fullName}
+                        {r.private ? " (private)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+              {githubReposError ? (
+                <p className="text-[11px] text-destructive">
+                  {githubReposErr instanceof ApiError
+                    ? githubReposErr.message
+                    : "Could not load GitHub repository list."}
+                </p>
+              ) : null}
               <input
                 className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
                 value={workspaceRepoUrl}
@@ -882,13 +936,21 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
             <p className="text-xs text-destructive">{workspaceError}</p>
           )}
           {createWorkspace.isError && (
-            <p className="text-xs text-destructive">Failed to save workspace.</p>
+            <p className="text-xs text-destructive">
+              {createWorkspace.error instanceof ApiError
+                ? createWorkspace.error.message
+                : "Failed to save workspace."}
+            </p>
           )}
           {removeWorkspace.isError && (
             <p className="text-xs text-destructive">Failed to delete workspace.</p>
           )}
           {updateWorkspace.isError && (
-            <p className="text-xs text-destructive">Failed to update workspace.</p>
+            <p className="text-xs text-destructive">
+              {updateWorkspace.error instanceof ApiError
+                ? updateWorkspace.error.message
+                : "Failed to update workspace."}
+            </p>
           )}
         </div>
 
