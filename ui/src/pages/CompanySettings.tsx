@@ -13,6 +13,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Settings, Check, Download, Upload } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
+import { CompanyMcpSettings } from "../components/CompanyMcpSettings";
 import {
   Field,
   ToggleField,
@@ -445,6 +446,8 @@ export function CompanySettings() {
           />
         </div>
       </div>
+
+      {selectedCompanyId ? <CompanyMcpSettings companyId={selectedCompanyId} /> : null}
 
       <div className="space-y-4">
         <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">

@@ -4,6 +4,12 @@ export const queryKeys = {
     detail: (id: string) => ["companies", id] as const,
     stats: ["companies", "stats"] as const,
   },
+  companyMcp: {
+    integrations: (companyId: string) => ["company-mcp", "integrations", companyId] as const,
+    syncTokens: (companyId: string) => ["company-mcp", "sync-tokens", companyId] as const,
+    agentBindings: (companyId: string, agentId: string) =>
+      ["company-mcp", "agent-bindings", companyId, agentId] as const,
+  },
   companySkills: {
     list: (companyId: string) => ["company-skills", companyId] as const,
     detail: (companyId: string, skillId: string) => ["company-skills", companyId, skillId] as const,

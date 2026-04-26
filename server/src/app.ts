@@ -12,6 +12,7 @@ import { privateHostnameGuard, resolvePrivateHostnameAllowSet } from "./middlewa
 import { healthRoutes } from "./routes/health.js";
 import { companyRoutes } from "./routes/companies.js";
 import { companyGithubRoutes } from "./routes/company-github.js";
+import { companyMcpRoutes } from "./routes/company-mcp.js";
 import { companySkillRoutes } from "./routes/company-skills.js";
 import { agentRoutes } from "./routes/agents.js";
 import { publicAgentAvatarRoutes } from "./routes/public-agent-avatars.js";
@@ -180,6 +181,7 @@ export async function createApp(
   );
   api.use("/companies", companyRoutes(db, opts.storageService));
   api.use("/companies", companyGithubRoutes(db));
+  api.use("/companies", companyMcpRoutes(db));
   api.use(companySkillRoutes(db));
   api.use("/public/agent-avatars", publicAgentAvatarRoutes(db, opts.storageService));
   api.use(agentRoutes(db, opts.storageService));

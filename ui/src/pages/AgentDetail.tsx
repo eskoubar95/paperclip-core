@@ -11,6 +11,7 @@ import { companySkillsApi } from "../api/companySkills";
 import { budgetsApi } from "../api/budgets";
 import { heartbeatsApi } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
+import { AgentMcpBindings } from "../components/AgentMcpBindings";
 import { ApiError } from "../api/client";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import { activityApi } from "../api/activity";
@@ -1541,6 +1542,12 @@ function AgentConfigurePage({
         <h3 className="text-sm font-medium mb-3">API Keys</h3>
         <KeysTab agentId={agentId} companyId={companyId} />
       </div>
+
+      {companyId ? (
+        <div className="pt-2 border-t border-border/60">
+          <AgentMcpBindings companyId={companyId} agentId={agentId} />
+        </div>
+      ) : null}
 
       {/* Configuration Revisions — collapsible at the bottom */}
       <div>

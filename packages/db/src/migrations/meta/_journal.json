@@ -435,6 +435,13 @@
       "when": 1776600000000,
       "tag": "0061_first_class_teams",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1776700000000,
+      "tag": "0062_company_mcp",
+      "breakpoints": true
     }
   ]
 }

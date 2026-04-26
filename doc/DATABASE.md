@@ -143,6 +143,29 @@ Use this when local **embedded** PostgreSQL is slow or stuck (e.g. migrations / 
 
 **Sealed** variables are not shown via the CLI; use the dashboard or Railway’s docs for that case.
 
+## Applying SQL migrations (hosted PostgreSQL / Railway)
+
+For any **external** Postgres (Railway, Supabase direct, self-hosted), the server applies pending migrations on startup, but you can (and for production you often should) run them **before** a deploy so the schema is ready when the new binary starts.
+
+From the **Paperclip monorepo root** (`paperclip/`), with `DATABASE_URL` pointing at the same database the server will use (direct / `5432` style connection is best for migrations):
+
+```sh
+# Linux / macOS / Git Bash
+export DATABASE_URL="postgres://USER:PASSWORD@HOST:PORT/DATABASE"
+pnpm db:migrate
+```
+
+**Windows (PowerShell):**
+
+```powershell
+$env:DATABASE_URL = "postgres://USER:PASSWORD@HOST:PORT/DATABASE"
+pnpm db:migrate
+```
+
+`pnpm db:migrate` runs `packages/db`’s migration runner, which applies numbered SQL in `packages/db/src/migrations/` (e.g. **`0062_company_mcp.sql`** for company-scoped Cursor MCP integration tables) in order.
+
+**After a schema change in git:** commit and push in your fork, bump `PAPERCLIP_GIT_REF` in the **parent** wrapper `Dockerfile` if you build images from the wrapper repo, rebuild the image, and restart the service (see the wrapper’s `docs/BUILD.md`). The database must have migrations applied for that build to work at runtime.
+
 ## Switching between modes
 
 The database mode is controlled by `DATABASE_URL`:
