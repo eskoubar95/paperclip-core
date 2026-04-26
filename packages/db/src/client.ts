@@ -34,6 +34,85 @@ function splitMigrationStatements(content: string): string[] {
     .filter((statement) => statement.length > 0);
 }
 
+/** Leading full-line `--` comments break `^ALTER TABLE`-style matchers; strip them for idempotency checks only. */
+function normalizeStatementForIdempotencyCheck(statement: string): string {
+  const lines = statement.split(/\r?\n/);
+  const body: string[] = [];
+  let stillLeading = true;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (stillLeading && (trimmed === "" || trimmed.startsWith("--"))) continue;
+    stillLeading = false;
+    body.push(line);
+  }
+  return body.join("\n").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Drizzle sometimes concatenates multiple SQL statements in one journal chunk (separated by `;`).
+ * Split on semicolons outside single-quoted literals and PostgreSQL dollar-quoted (`$$…$$`) blocks.
+ */
+function splitSqlOnSemicolons(sql: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let index = 0;
+  while (index < sql.length) {
+    const char = sql[index];
+    if (char === "'") {
+      current += char;
+      index++;
+      while (index < sql.length) {
+        if (sql[index] === "'" && sql[index + 1] === "'") {
+          current += "''";
+          index += 2;
+          continue;
+        }
+        if (sql[index] === "'") {
+          current += "'";
+          index++;
+          break;
+        }
+        current += sql[index];
+        index++;
+      }
+      continue;
+    }
+    if (char === "$") {
+      let endTag = index + 1;
+      while (endTag < sql.length && sql[endTag] !== "$") endTag++;
+      if (endTag >= sql.length) {
+        current += sql.slice(index);
+        break;
+      }
+      const dollarQuote = sql.slice(index, endTag + 1);
+      const closeIdx = sql.indexOf(dollarQuote, endTag + 1);
+      if (closeIdx === -1) {
+        current += sql.slice(index);
+        break;
+      }
+      current += sql.slice(index, closeIdx + dollarQuote.length);
+      index = closeIdx + dollarQuote.length;
+      continue;
+    }
+    if (char === ";") {
+      const trimmed = current.trim();
+      if (trimmed.length > 0) parts.push(trimmed);
+      current = "";
+      index++;
+      continue;
+    }
+    current += char;
+    index++;
+  }
+  const trimmed = current.trim();
+  if (trimmed.length > 0) parts.push(trimmed);
+  return parts;
+}
+
+function expandMigrationSqlChunks(chunks: string[]): string[] {
+  return chunks.flatMap((chunk) => splitSqlOnSemicolons(chunk));
+}
+
 export type MigrationState =
   | { status: "upToDate"; tableCount: number; availableMigrations: string[]; appliedMigrations: string[] }
   | {
@@ -260,8 +339,11 @@ async function applyPendingMigrationsManually(
       if (existingEntry) continue;
 
       await runInTransaction(sql, async () => {
-        for (const statement of splitMigrationStatements(migrationContent)) {
-          await sql.unsafe(statement);
+        for (const statement of expandMigrationSqlChunks(splitMigrationStatements(migrationContent))) {
+          const already = await migrationStatementAlreadyApplied(sql, statement);
+          if (!already) {
+            await sql.unsafe(statement);
+          }
         }
 
         await recordMigrationHistoryEntry(
@@ -373,22 +455,99 @@ async function constraintExists(
   return rows[0]?.exists ?? false;
 }
 
+/** Table name as used in information_schema (last segment if schema-qualified). */
+function extractAlterTableBaseName(normalized: string): string | null {
+  const schemaQuoted = /^ALTER TABLE "([^"]+)"\s*\.\s*"([^"]+)"/i;
+  const singleQuoted = /^ALTER TABLE "([^"]+)"/i;
+  const unquoted = /^ALTER TABLE ([a-zA-Z_][a-zA-Z0-9_]*)/i;
+  const m1 = normalized.match(schemaQuoted);
+  if (m1) return m1[2];
+  const m2 = normalized.match(singleQuoted);
+  if (m2) return m2[1];
+  const m3 = normalized.match(unquoted);
+  if (m3) return m3[1];
+  return null;
+}
+
+const ADD_COLUMN_FRAGMENT =
+  /ADD(?:\s+COLUMN)?(?:\s+IF\s+NOT\s+EXISTS)?\s+(?!CONSTRAINT)(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))/gi;
+
+function extractAddColumnNamesFromAlter(normalized: string): string[] {
+  const names: string[] = [];
+  for (const match of normalized.matchAll(ADD_COLUMN_FRAGMENT)) {
+    const name = match[1] ?? match[2];
+    if (name) names.push(name);
+  }
+  return names;
+}
+
+function alterStatementHasNonAddColumnWork(normalized: string): boolean {
+  return (
+    /\bDROP\s+COLUMN\b/i.test(normalized) ||
+    /\bALTER\s+COLUMN\b/i.test(normalized) ||
+    /\bADD\s+CONSTRAINT\b/i.test(normalized)
+  );
+}
+
+/**
+ * When 0017's two unique indexes already exist, re-running its prefix/identifier UPDATE chain can
+ * temporarily violate `issues_identifier_idx` (journal drift). Treat those statements as no-ops.
+ */
+function isIssueIdentifierMigration0017NoopWhenIndexesPresent(normalized: string): boolean {
+  if (/^DROP INDEX/i.test(normalized) && /issues_company_identifier_idx/.test(normalized)) return true;
+  if (/^WITH ranked_companies AS /i.test(normalized)) return true;
+  if (/^WITH numbered_issues AS /i.test(normalized)) return true;
+  if (/^UPDATE issues i SET identifier = c\.issue_prefix/i.test(normalized)) return true;
+  if (/^UPDATE companies c SET issue_counter/i.test(normalized)) return true;
+  if (/^CREATE UNIQUE INDEX "companies_issue_prefix_idx"/i.test(normalized)) return true;
+  if (/^CREATE UNIQUE INDEX "issues_identifier_idx"/i.test(normalized)) return true;
+  return false;
+}
+
 async function migrationStatementAlreadyApplied(
   sql: ReturnType<typeof postgres>,
   statement: string,
 ): Promise<boolean> {
-  const normalized = statement.replace(/\s+/g, " ").trim();
+  const normalized = normalizeStatementForIdempotencyCheck(statement);
+
+  const issuesIdentifierGlobalUnique = await indexExists(sql, "issues_identifier_idx");
+
+  // 0004 backfill: recomputing identifier from per-company prefix collides once 0017's global unique index exists.
+  if (issuesIdentifierGlobalUnique && /^WITH numbered AS /i.test(normalized)) return true;
+  if (issuesIdentifierGlobalUnique && /^UPDATE companies SET issue_counter/i.test(normalized)) return true;
+
+  const postIssueIdentifierMigration0017 =
+    issuesIdentifierGlobalUnique && (await indexExists(sql, "companies_issue_prefix_idx"));
+  if (postIssueIdentifierMigration0017 && isIssueIdentifierMigration0017NoopWhenIndexesPresent(normalized)) {
+    return true;
+  }
 
   const createTableMatch = normalized.match(/^CREATE TABLE(?: IF NOT EXISTS)? "([^"]+)"/i);
   if (createTableMatch) {
     return tableExists(sql, createTableMatch[1]);
   }
 
-  const addColumnMatch = normalized.match(
-    /^ALTER TABLE "([^"]+)" ADD COLUMN(?: IF NOT EXISTS)? "([^"]+)"/i,
+  if (/^ALTER TABLE/i.test(normalized)) {
+    const tableName = extractAlterTableBaseName(normalized);
+    const addColumnNames = extractAddColumnNamesFromAlter(normalized);
+    if (
+      tableName &&
+      addColumnNames.length > 0 &&
+      !alterStatementHasNonAddColumnWork(normalized)
+    ) {
+      for (const columnName of addColumnNames) {
+        if (!(await columnExists(sql, tableName, columnName))) return false;
+      }
+      return true;
+    }
+  }
+
+  const dropIndexMatch = normalized.match(
+    /^DROP INDEX(?: CONCURRENTLY)?(?: IF EXISTS)? (?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))/i,
   );
-  if (addColumnMatch) {
-    return columnExists(sql, addColumnMatch[1], addColumnMatch[2]);
+  if (dropIndexMatch) {
+    const indexName = dropIndexMatch[1] ?? dropIndexMatch[2];
+    if (indexName) return !(await indexExists(sql, indexName));
   }
 
   const createIndexMatch = normalized.match(/^CREATE (?:UNIQUE )?INDEX(?: IF NOT EXISTS)? "([^"]+)"/i);
@@ -401,6 +560,33 @@ async function migrationStatementAlreadyApplied(
     return constraintExists(sql, addConstraintMatch[2]);
   }
 
+  const alterColumnSetDefaultMatch = normalized.match(
+    /^ALTER TABLE "([^"]+)" ALTER COLUMN "([^"]+)" SET DEFAULT/i,
+  );
+  if (alterColumnSetDefaultMatch) {
+    return columnExists(sql, alterColumnSetDefaultMatch[1], alterColumnSetDefaultMatch[2]);
+  }
+
+  const alterColumnDropNotNullMatch = normalized.match(
+    /^ALTER TABLE "([^"]+)" ALTER COLUMN "([^"]+)" DROP NOT NULL/i,
+  );
+  if (alterColumnDropNotNullMatch) {
+    return columnExists(sql, alterColumnDropNotNullMatch[1], alterColumnDropNotNullMatch[2]);
+  }
+
+  const alterColumnSetNotNullMatch = normalized.match(
+    /^ALTER TABLE "([^"]+)" ALTER COLUMN "([^"]+)" SET NOT NULL/i,
+  );
+  if (alterColumnSetNotNullMatch) {
+    return columnExists(sql, alterColumnSetNotNullMatch[1], alterColumnSetNotNullMatch[2]);
+  }
+
+  const dropColumnMatch = normalized.match(/^ALTER TABLE "([^"]+)" DROP COLUMN "([^"]+)"/i);
+  if (dropColumnMatch) {
+    const exists = await columnExists(sql, dropColumnMatch[1], dropColumnMatch[2]);
+    return !exists;
+  }
+
   // If we cannot reason about a statement safely, require manual migration.
   return false;
 }
@@ -409,7 +595,7 @@ async function migrationContentAlreadyApplied(
   sql: ReturnType<typeof postgres>,
   migrationContent: string,
 ): Promise<boolean> {
-  const statements = splitMigrationStatements(migrationContent);
+  const statements = expandMigrationSqlChunks(splitMigrationStatements(migrationContent));
   if (statements.length === 0) return false;
 
   for (const statement of statements) {
