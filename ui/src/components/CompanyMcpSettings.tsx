@@ -11,12 +11,14 @@ const PROVIDERS: { id: McpProviderKey; label: string; hint: string }[] = [
   {
     id: "custom_stdio",
     label: "Custom (stdio)",
-    hint: "Set command, args, and optional env in JSON (e.g. npx -y <your mcp package>). Add a token to inject into one env var (default API_KEY) or set env in config.",
+    hint:
+      "Command, args, and optional env in JSON (e.g. npx -y … for remote stdio). Put API keys, PATs, or bearer material in the token field (injected as API_KEY or tokenEnvName). Browser-first npx auth must be completed out of band; then paste the resulting secret here so agents do not need a browser at run time. See doc/MCP-CONNECTORS.md.",
   },
   {
     id: "http_bearer",
     label: "HTTP (Bearer)",
-    hint: "Remote MCP: set { \"url\": \"https://…\" } in config. Token is sent as Authorization: Bearer …",
+    hint:
+      "Set { \"url\": \"https://…\" } in config. The stored token is sent as Authorization: Bearer. Prefer this when the remote MCP documents bearer or OAuth-derived access tokens.",
   },
 ];
 
@@ -125,11 +127,13 @@ export function CompanyMcpSettings({ companyId }: { companyId: string }) {
         Cursor MCP
       </div>
       <p className="text-sm text-muted-foreground max-w-2xl">
-        Define MCP servers here. Use a{" "}
+        Connectors: each integration is a command or HTTP URL plus optional secrets (key, PAT, bearer,
+        or future OAuth/refresh material) stored encrypted. Finish interactive login{" "}
+        <span className="font-medium text-foreground">before</span> unattended agent runs. Use a{" "}
         <span className="font-medium text-foreground">local sync token</span> and{" "}
         <code className="text-xs">Sync-PaperclipMcp.ps1</code> (or curl) to write{" "}
-        <code className="text-xs">%USERPROFILE%\.cursor\mcp.json</code> on your machine. The web UI
-        cannot write that file directly.
+        <code className="text-xs">%USERPROFILE%\.cursor\mcp.json</code> with those secrets so
+        Cursor does not need a browser at run time. The web UI does not write that file directly.
       </p>
 
       <div className="rounded-md border border-border px-4 py-3 space-y-3">
@@ -175,7 +179,7 @@ export function CompanyMcpSettings({ companyId }: { companyId: string }) {
             value={token}
             onChange={(e) => setToken(e.target.value)}
             autoComplete="off"
-            placeholder="API key or PAT"
+            placeholder="API key, PAT, or bearer (after connect / provider docs)"
           />
         </Field>
         <Field label="Extra config (JSON)">

@@ -1,4 +1,5 @@
 import express, { Router, type Request as ExpressRequest } from "express";
+import type { Server } from "node:http";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -108,6 +109,13 @@ export async function createApp(
   opts: {
     uiMode: UiMode;
     serverPort: number;
+    /** If provided, the HTTP `createServer` must wrap this app so Vite HMR can share the same port. */
+    app?: express.Application;
+    /**
+     * When vite-dev: attach HMR to this `http.Server` (same port as the API) so the browser
+     * and WebSocket use one origin — fixes HMR and full refresh when using `localhost` vs `127.0.0.1`.
+     */
+    httpServer?: Server;
     storageService: StorageService;
     feedbackExportService?: {
       flushPendingFeedbackTraces(input?: {
@@ -130,7 +138,7 @@ export async function createApp(
     resolveSession?: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
   },
 ) {
-  const app = express();
+  const app = opts.app ?? express();
 
   app.use(express.json({
     // Company import/export payloads can inline full portable packages.
@@ -345,17 +353,21 @@ export async function createApp(
     const uiRoot = path.resolve(__dirname, "../../ui");
     const publicUiRoot = path.resolve(uiRoot, "public");
     const hmrPort = resolveViteHmrPort(opts.serverPort);
+    const hmr =
+      opts.httpServer !== undefined
+        ? { server: opts.httpServer }
+        : {
+            host: opts.bindHost,
+            port: hmrPort,
+            clientPort: hmrPort,
+          };
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       root: uiRoot,
       appType: "custom",
       server: {
         middlewareMode: true,
-        hmr: {
-          host: opts.bindHost,
-          port: hmrPort,
-          clientPort: hmrPort,
-        },
+        hmr,
         allowedHosts: privateHostnameGateEnabled ? Array.from(privateHostnameAllowSet) : undefined,
       },
     });

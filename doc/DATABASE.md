@@ -179,6 +179,10 @@ The database mode is controlled by `DATABASE_URL`:
 
 Your Drizzle schema (`packages/db/src/schema/`) stays the same regardless of mode.
 
+## Company-scoped Cursor MCP
+
+Tables from **`0062_company_mcp.sql`** (integrations, per-agent bindings, sync tokens) back the **Cursor MCP** settings in the board. Integrations reference encrypted token material via the same `company_secrets` machinery as other secrets. For how auth patterns (static keys, bearer, remote stdio, future OAuth) map to the bundle and to unattended **agent** runs, see **`doc/MCP-CONNECTORS.md`**.
+
 ## Secret storage
 
 Paperclip stores secret metadata and versions in:

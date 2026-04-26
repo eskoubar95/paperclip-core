@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { pathToFileURL } from "node:url";
-import type { Request as ExpressRequest, RequestHandler } from "express";
+import express, { type Request as ExpressRequest, type RequestHandler } from "express";
 import { and, eq } from "drizzle-orm";
 import {
   createDb,
@@ -574,7 +574,11 @@ export async function startServer(): Promise<StartedServer> {
   const feedback = feedbackService(db as any, {
     shareClient: createFeedbackTraceShareClientFromConfig(config),
   });
-  const app = await createApp(db as any, {
+  const expressApp = express();
+  const server = createServer(expressApp);
+  await createApp(db as any, {
+    app: expressApp,
+    httpServer: config.uiDevMiddleware ? server : undefined,
     uiMode,
     serverPort: listenPort,
     storageService,
@@ -588,7 +592,6 @@ export async function startServer(): Promise<StartedServer> {
     betterAuthHandler,
     resolveSession,
   });
-  const server = createServer(app as unknown as Parameters<typeof createServer>[0]);
 
   // Increase keep-alive timeouts to safely outlive default idle timeouts
   // of common reverse proxies and load balancers (like AWS ALB, Nginx, or Traefik).

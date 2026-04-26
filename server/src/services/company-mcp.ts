@@ -22,7 +22,10 @@ function createSyncToken() {
   return `pcpmcp_${randomBytes(32).toString("hex")}`;
 }
 
-/** No vendor-specific npx packages — use `custom_stdio` (command/args in config) or `http_bearer`. */
+/**
+ * No vendor-specific npx in code — config carries command/args (e.g. npx) and the vault stores
+ * static tokens (key, PAT, bearer, etc.). See doc/MCP-CONNECTORS.md for auth model guidance.
+ */
 export const MCP_PROVIDER_KEYS = ["http_bearer", "custom_stdio"] as const;
 export type McpProviderKey = (typeof MCP_PROVIDER_KEYS)[number];
 
