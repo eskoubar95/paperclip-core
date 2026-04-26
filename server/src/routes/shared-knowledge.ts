@@ -32,7 +32,8 @@ export function sharedKnowledgeRoutes(db: Db) {
 
   router.get("/companies/:companyId/agents/:agentId/shared-knowledge/summaries", async (req, res, next) => {
     try {
-      const { companyId, agentId } = req.params;
+      const companyId = req.params.companyId as string;
+      const agentId = req.params.agentId as string;
       assertCompanyAccess(req, companyId);
       await assertAgentInCompany(companyId, agentId);
       const limit = Number.parseInt(String(req.query.limit ?? "20"), 10);
@@ -45,7 +46,8 @@ export function sharedKnowledgeRoutes(db: Db) {
 
   router.get("/companies/:companyId/agents/:agentId/shared-knowledge/items", async (req, res, next) => {
     try {
-      const { companyId, agentId } = req.params;
+      const companyId = req.params.companyId as string;
+      const agentId = req.params.agentId as string;
       assertCompanyAccess(req, companyId);
       await assertAgentInCompany(companyId, agentId);
       const limit = Number.parseInt(String(req.query.limit ?? "50"), 10);
@@ -61,7 +63,8 @@ export function sharedKnowledgeRoutes(db: Db) {
     validate(createKnowledgeBody),
     async (req, res, next) => {
       try {
-        const { companyId, agentId } = req.params;
+        const companyId = req.params.companyId as string;
+        const agentId = req.params.agentId as string;
         assertCompanyAccess(req, companyId);
         await assertAgentInCompany(companyId, agentId);
         if (!knowledge.isEnabled()) {
