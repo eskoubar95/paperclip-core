@@ -26,6 +26,12 @@ export function teamRoutes(db: Db) {
   const webhooks = companyIssueWebhookService(db);
   const issueSvc = issueService(db);
 
+  router.get("/:companyId/team-memberships/by-agent", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json(await teams.listAgentTeamAffiliationsForCompany(companyId));
+  });
+
   router.get("/:companyId/teams", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);

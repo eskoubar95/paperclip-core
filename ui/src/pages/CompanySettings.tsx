@@ -240,7 +240,7 @@ export function CompanySettings() {
     const status = companiesError instanceof ApiError ? companiesError.status : null;
     const detail =
       status === 403 || status === 401
-        ? " The API rejected this session (often: deployment mode is authenticated but you are not signed in). For local Docker, use the Windows launcher with PAPERCLIP_DEPLOYMENT_MODE=local_trusted, or sign in at /auth."
+        ? " The API rejected this session (deployments in authenticated mode require sign-in). Open /auth. For local Docker, run scripts/windows/start-paperclip.ps1 so DATABASE_URL from instance .env is used; do not force local_trusted in the container if you use remote Postgres."
         : "";
     return (
       <div className="max-w-xl space-y-2 text-sm text-destructive">

@@ -1,4 +1,5 @@
 import type {
+  AgentTeamAffiliationRow,
   BatchKickoff,
   CompanyIssueWebhook,
   CreateCompanyIssueWebhook,
@@ -17,6 +18,8 @@ export const teamsApi = {
     const q = includeArchived ? "?includeArchived=true" : "";
     return api.get<Team[]>(`/companies/${companyId}/teams${q}`);
   },
+  listAgentAffiliations: (companyId: string) =>
+    api.get<AgentTeamAffiliationRow[]>(`/companies/${companyId}/team-memberships/by-agent`),
   create: (companyId: string, data: CreateTeam) =>
     api.post<Team>(`/companies/${companyId}/teams`, data),
   update: (companyId: string, teamId: string, data: UpdateTeam) =>

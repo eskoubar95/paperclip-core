@@ -38,6 +38,14 @@ export interface TeamMembershipWithPrincipal extends TeamMembership {
   displayName?: string | null;
 }
 
+/** One team link for an agent (list views, org chart, agent header). */
+export interface AgentTeamAffiliationRow {
+  agentId: string;
+  team: TeamSummary;
+  teamRole: TeamMembershipRole;
+  membershipId: string;
+}
+
 export interface TeamLeadRefs {
   userId: string | null;
   agentId: string | null;

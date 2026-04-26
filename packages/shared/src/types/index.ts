@@ -128,6 +128,7 @@ export type {
   TeamSummary,
   TeamMembership,
   TeamMembershipWithPrincipal,
+  AgentTeamAffiliationRow,
   TeamLeadRefs,
   IssueTemplate,
   CompanyIssueWebhook,

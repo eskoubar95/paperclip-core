@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
+import { teamsApi } from "../api/teams";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -12,6 +13,7 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentIcon } from "../components/AgentIconPicker";
 import { Download, Network, Upload } from "lucide-react";
 import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
+import { issueFilterLabel } from "../lib/issue-filters";
 
 // Layout constants
 const CARD_W = 200;
@@ -146,6 +148,22 @@ export function OrgChart() {
     queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+
+  const { data: companyTeamAffiliations = [] } = useQuery({
+    queryKey: queryKeys.teams.agentAffiliations(selectedCompanyId!),
+    queryFn: () => teamsApi.listAgentAffiliations(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const teamAffiliationsByAgent = useMemo(() => {
+    const m = new Map<string, typeof companyTeamAffiliations>();
+    for (const row of companyTeamAffiliations) {
+      const list = m.get(row.agentId);
+      if (list) list.push(row);
+      else m.set(row.agentId, [row]);
+    }
+    return m;
+  }, [companyTeamAffiliations]);
 
   const agentMap = useMemo(() => {
     const m = new Map<string, Agent>();
@@ -380,6 +398,7 @@ export function OrgChart() {
       >
         {allNodes.map((node) => {
           const agent = agentMap.get(node.id);
+          const teamAffs = teamAffiliationsByAgent.get(node.id) ?? [];
           const dotColor = statusDotColor[node.status] ?? defaultDotColor;
 
           return (
@@ -422,6 +441,22 @@ export function OrgChart() {
                     <span className="text-[10px] text-muted-foreground/60 font-mono leading-tight mt-1">
                       {getAdapterLabel(agent.adapterType)}
                     </span>
+                  )}
+                  {teamAffs.length > 0 && (
+                    <div className="flex flex-wrap gap-0.5 mt-1 w-full max-w-full">
+                      {teamAffs.slice(0, 2).map((row) => (
+                        <span
+                          key={row.membershipId}
+                          className="max-w-full truncate rounded bg-primary/10 px-1 py-px text-[9px] font-medium text-foreground/80"
+                          title={`${row.team.name} — ${issueFilterLabel(row.teamRole)}`}
+                        >
+                          {row.team.name}
+                        </span>
+                      ))}
+                      {teamAffs.length > 2 && (
+                        <span className="text-[9px] text-muted-foreground">+{teamAffs.length - 2}</span>
+                      )}
+                    </div>
                   )}
                   {agent && agent.capabilities && (
                     <span className="text-[10px] text-muted-foreground/80 leading-tight mt-1 line-clamp-2">

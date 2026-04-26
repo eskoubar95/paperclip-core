@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Hexagon, Plus, Trash2 } from "lucide-react";
+import { agentsApi } from "@/api/agents";
 import { teamsApi } from "@/api/teams";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +11,7 @@ import { useCompany } from "@/context/CompanyContext";
 import { useToast } from "@/context/ToastContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { TEAM_MEMBERSHIP_ROLES, ISSUE_WORKSTREAM_ROLES } from "@paperclipai/shared";
-import type { Team } from "@paperclipai/shared";
+import type { Agent, Team } from "@paperclipai/shared";
 import { issueFilterLabel } from "@/lib/issue-filters";
 
 const ROLE_OPTIONS = [...TEAM_MEMBERSHIP_ROLES];
@@ -26,7 +27,7 @@ export function Teams() {
   const [slug, setSlug] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [newMember, setNewMember] = useState({
-    principalType: "user" as "user" | "agent",
+    principalType: "agent" as "user" | "agent",
     principalId: "",
     teamRole: "backend" as string,
   });
@@ -58,6 +59,20 @@ export function Teams() {
     queryFn: () => teamsApi.list(selectedCompanyId!, includeArchived),
     enabled: !!selectedCompanyId,
   });
+
+  const agentsQuery = useQuery({
+    queryKey: selectedCompanyId ? queryKeys.agents.list(selectedCompanyId) : ["agents", "off"],
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const agentsById = useMemo(() => {
+    const map = new Map<string, Pick<Agent, "name" | "title">>();
+    for (const a of agentsQuery.data ?? []) {
+      map.set(a.id, { name: a.name, title: a.title });
+    }
+    return map;
+  }, [agentsQuery.data]);
 
   const templatesQuery = useQuery({
     queryKey: selectedCompanyId ? queryKeys.teams.issueTemplates(selectedCompanyId) : ["issue-templates", "off"],
@@ -135,6 +150,9 @@ export function Teams() {
         await queryClient.invalidateQueries({
           queryKey: queryKeys.teams.memberships(selectedCompanyId, expanded),
         });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.teams.agentAffiliations(selectedCompanyId),
+        });
       }
       pushToast({ title: "Member added", tone: "success" });
     },
@@ -157,6 +175,9 @@ export function Teams() {
         await queryClient.invalidateQueries({
           queryKey: queryKeys.teams.memberships(selectedCompanyId, input.teamId),
         });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.teams.agentAffiliations(selectedCompanyId),
+        });
       }
     },
   });
@@ -170,6 +191,9 @@ export function Teams() {
       if (selectedCompanyId && expanded) {
         await queryClient.invalidateQueries({
           queryKey: queryKeys.teams.memberships(selectedCompanyId, expanded),
+        });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.teams.agentAffiliations(selectedCompanyId),
         });
       }
     },
@@ -322,7 +346,23 @@ export function Teams() {
         {teamsQuery.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
         {teamRows.length === 0 && <p className="text-sm text-muted-foreground">No teams yet.</p>}
         <ul className="divide-y divide-border rounded-lg border border-border">
-          {teamRows.map((team: Team) => (
+          {teamRows.map((team: Team) => {
+            const memberAgentIds =
+              expanded === team.id
+                ? new Set(
+                    (membershipQuery.data ?? [])
+                      .filter((m) => m.principalType === "agent")
+                      .map((m) => m.principalId),
+                  )
+                : new Set<string>();
+            const availableAgents =
+              expanded === team.id
+                ? (agentsQuery.data ?? [])
+                    .filter((a) => a.status !== "terminated" && !memberAgentIds.has(a.id))
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                : [];
+
+            return (
             <li key={team.id} className="p-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="min-w-0 flex-1">
@@ -413,22 +453,43 @@ export function Teams() {
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                       value={newMember.principalType}
                       onChange={(e) =>
-                        setNewMember((m) => ({ ...m, principalType: e.target.value as "user" | "agent" }))
+                        setNewMember((m) => ({
+                          ...m,
+                          principalType: e.target.value as "user" | "agent",
+                          principalId: "",
+                        }))
                       }
                     >
-                      <option value="user">User</option>
                       <option value="agent">Agent</option>
+                      <option value="user">User (by id)</option>
                     </select>
-                    <Input
-                      className="max-w-xs"
-                      placeholder="Principal id (user id or agent uuid)"
-                      value={newMember.principalId}
-                      onChange={(e) => setNewMember((m) => ({ ...m, principalId: e.target.value }))}
-                    />
+                    {newMember.principalType === "agent" ? (
+                      <select
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm min-w-[12rem] max-w-[min(100%,24rem)]"
+                        value={newMember.principalId}
+                        onChange={(e) => setNewMember((m) => ({ ...m, principalId: e.target.value }))}
+                      >
+                        <option value="">Select an agent…</option>
+                        {availableAgents.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                            {a.title ? ` — ${a.title}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <Input
+                        className="max-w-xs"
+                        placeholder="User id (auth user id)"
+                        value={newMember.principalId}
+                        onChange={(e) => setNewMember((m) => ({ ...m, principalId: e.target.value }))}
+                      />
+                    )}
                     <select
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                       value={newMember.teamRole}
                       onChange={(e) => setNewMember((m) => ({ ...m, teamRole: e.target.value }))}
+                      title="Workstream role for issues in this team (not the same as the agent job title)"
                     >
                       {ROLE_OPTIONS.map((r) => (
                         <option key={r} value={r}>
@@ -445,12 +506,27 @@ export function Teams() {
                       Add
                     </Button>
                   </div>
+                  <p className="text-[11px] text-muted-foreground max-w-lg">
+                    Workstream role is for routing and filters on issues. It is stored per team membership and is
+                    separate from the agent&apos;s name/title on the agent profile.
+                  </p>
                   <ul className="text-sm space-y-1">
                     {membershipQuery.data?.map((m) => (
                       <li key={m.id} className="flex items-center justify-between gap-2 flex-wrap">
-                        <span className="font-mono text-xs break-all">
-                          {m.principalType}:{m.principalId}
-                        </span>
+                        {m.principalType === "agent" && agentsById.has(m.principalId) ? (
+                          <div className="min-w-0">
+                            <div className="font-medium text-sm">
+                              {agentsById.get(m.principalId)!.name}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground font-mono break-all">
+                              {m.principalId}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="font-mono text-xs break-all min-w-0">
+                            {m.principalType}:{m.principalId}
+                          </span>
+                        )}
                         <div className="flex items-center gap-2">
                           <select
                             className="h-8 rounded-md border border-input bg-background px-2 text-xs"
@@ -485,7 +561,8 @@ export function Teams() {
                 </div>
               )}
             </li>
-          ))}
+            );
+          })}
         </ul>
       </section>
 

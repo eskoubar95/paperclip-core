@@ -1,7 +1,16 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { teamMemberships, teams } from "@paperclipai/db";
-import type { CreateTeam, Team, TeamLeadRefs, TeamMembership, TeamSummary, UpdateTeam } from "@paperclipai/shared";
+import type {
+  AgentTeamAffiliationRow,
+  CreateTeam,
+  Team,
+  TeamLeadRefs,
+  TeamMembership,
+  TeamMembershipRole,
+  TeamSummary,
+  UpdateTeam,
+} from "@paperclipai/shared";
 import { TEAM_MEMBERSHIP_ROLES } from "@paperclipai/shared";
 import { notFound, unprocessable } from "../errors.js";
 
@@ -117,6 +126,35 @@ export function teamService(db: Db) {
         .where(
           and(eq(teamMemberships.teamId, teamId), eq(teamMemberships.companyId, companyId)),
         );
+    },
+
+    /**
+     * All active agent↔team links in a company (for org chart and agent header badges).
+     */
+    async listAgentTeamAffiliationsForCompany(companyId: string): Promise<AgentTeamAffiliationRow[]> {
+      const rows = await db
+        .select({
+          membership: teamMemberships,
+          team: teams,
+        })
+        .from(teamMemberships)
+        .innerJoin(teams, eq(teamMemberships.teamId, teams.id))
+        .where(
+          and(
+            eq(teamMemberships.companyId, companyId),
+            eq(teams.companyId, companyId),
+            eq(teamMemberships.principalType, "agent"),
+            eq(teamMemberships.status, "active"),
+          ),
+        )
+        .orderBy(asc(teams.name), asc(teamMemberships.principalId), asc(teams.id));
+
+      return rows.map((r) => ({
+        agentId: r.membership.principalId,
+        team: toSummary(r.team),
+        teamRole: r.membership.teamRole as TeamMembershipRole,
+        membershipId: r.membership.id,
+      }));
     },
 
     async addMembership(

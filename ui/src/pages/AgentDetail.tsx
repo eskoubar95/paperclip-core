@@ -15,6 +15,7 @@ import { ApiError } from "../api/client";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
+import { teamsApi } from "../api/teams";
 import { usePanel } from "../context/PanelContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useCompany } from "../context/CompanyContext";
@@ -94,6 +95,7 @@ import {
 } from "@paperclipai/shared";
 import { redactHomePathUserSegments, redactHomePathUserSegmentsInValue } from "@paperclipai/adapter-utils";
 import { agentRouteRef } from "../lib/utils";
+import { issueFilterLabel } from "../lib/issue-filters";
 import {
   applyAgentSkillSnapshot,
   arraysEqual,
@@ -684,6 +686,16 @@ export function AgentDetail() {
     enabled: !!resolvedCompanyId && needsDashboardData,
   });
 
+  const { data: companyTeamAffiliations = [] } = useQuery({
+    queryKey: queryKeys.teams.agentAffiliations(resolvedCompanyId!),
+    queryFn: () => teamsApi.listAgentAffiliations(resolvedCompanyId!),
+    enabled: !!resolvedCompanyId,
+  });
+  const teamAffiliationsForAgent = useMemo(
+    () => companyTeamAffiliations.filter((r) => r.agentId === agent?.id),
+    [companyTeamAffiliations, agent?.id],
+  );
+
   const { data: budgetOverview } = useQuery({
     queryKey: queryKeys.budgets.overview(resolvedCompanyId ?? "__none__"),
     queryFn: () => budgetsApi.overview(resolvedCompanyId!),
@@ -967,6 +979,26 @@ export function AgentDetail() {
               {roleLabels[agent.role] ?? agent.role}
               {agent.title ? ` - ${agent.title}` : ""}
             </p>
+            {teamAffiliationsForAgent.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                {teamAffiliationsForAgent.map((row) => (
+                  <span
+                    key={row.membershipId}
+                    className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-muted/50 px-2 py-0.5 text-[11px] text-foreground/90"
+                    title={`${row.team.name} — ${issueFilterLabel(row.teamRole)}`}
+                  >
+                    <span className="font-medium truncate">{row.team.name}</span>
+                    <span className="text-muted-foreground shrink-0">· {issueFilterLabel(row.teamRole)}</span>
+                  </span>
+                ))}
+                <Link
+                  to="/company/settings/teams"
+                  className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2"
+                >
+                  Teams
+                </Link>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">

@@ -79,6 +79,8 @@ export const queryKeys = {
   teams: {
     list: (companyId: string) => ["teams", companyId] as const,
     memberships: (companyId: string, teamId: string) => ["teams", companyId, teamId, "memberships"] as const,
+    /** All agent↔team rows for a company (org chart, agent header). */
+    agentAffiliations: (companyId: string) => ["teams", companyId, "agent-affiliations"] as const,
     issueTemplates: (companyId: string) => ["issue-templates", companyId] as const,
     webhooks: (companyId: string) => ["issue-webhooks", companyId] as const,
   },

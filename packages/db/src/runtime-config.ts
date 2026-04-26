@@ -85,9 +85,26 @@ function findConfigFileFromAncestors(startDir: string): string | null {
   }
 }
 
+/**
+ * Same order as `server/src/paths.ts#resolvePaperclipConfigPath`: when the instance id is
+ * `default`, the profile instance config (if the file exists) wins over a repo
+ * `paperclip/.paperclip/config.json` found from walking up from `server/` cwd.
+ */
 function resolvePaperclipConfigPath(): string {
   if (process.env.PAPERCLIP_CONFIG?.trim()) {
     return path.resolve(process.env.PAPERCLIP_CONFIG.trim());
+  }
+  let instanceId: string;
+  try {
+    instanceId = resolvePaperclipInstanceId();
+  } catch {
+    instanceId = DEFAULT_INSTANCE_ID;
+  }
+  if (instanceId === DEFAULT_INSTANCE_ID) {
+    const homeDefault = resolveDefaultConfigPath();
+    if (existsSync(homeDefault)) {
+      return homeDefault;
+    }
   }
   return findConfigFileFromAncestors(process.cwd()) ?? resolveDefaultConfigPath();
 }
