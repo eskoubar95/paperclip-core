@@ -79,6 +79,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatIssueActivityAction } from "@/lib/activity-format";
+import { issueFilterLabel } from "../lib/issue-filters";
 import { buildIssuePropertiesPanelKey } from "../lib/issue-properties-panel-key";
 import { shouldRenderRichSubIssuesSection } from "../lib/issue-detail-subissues";
 import { buildSubIssueDefaultsForViewer } from "../lib/subIssueDefaults";
@@ -109,6 +110,7 @@ import {
   type Issue,
   type IssueAttachment,
   type IssueComment,
+  type IssueOrchestrationSummary,
 } from "@paperclipai/shared";
 
 type CommentReassignment = IssueCommentReassignment;
@@ -1069,6 +1071,12 @@ export function IssueDetail() {
     () => [...rawChildIssues].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
     [rawChildIssues],
   );
+
+  const { data: orchestrationSummary } = useQuery<IssueOrchestrationSummary>({
+    queryKey: issue?.id ? queryKeys.issues.orchestrationSummary(issue.id) : ["issues", "orchestration", "off"],
+    queryFn: () => issuesApi.getOrchestrationSummary(issue!.id),
+    enabled: !!issue?.id && childIssues.length > 0,
+  });
   const issuePanelKey = useMemo(
     () => buildIssuePropertiesPanelKey(issue ?? null, childIssues),
     [childIssues, issue],
@@ -2402,6 +2410,33 @@ export function IssueDetail() {
         itemClassName="rounded-lg border border-border p-3"
         missingBehavior="placeholder"
       />
+
+      {childIssues.length > 0 && orchestrationSummary ? (
+        <div className="rounded-lg border border-border p-3 space-y-2">
+          <h3 className="text-sm font-medium text-muted-foreground">Orchestration rollup</h3>
+          {orchestrationSummary.crossTeamBlockerWarning ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400">{orchestrationSummary.crossTeamBlockerWarning}</p>
+          ) : null}
+          <ul className="space-y-2 text-sm">
+            {orchestrationSummary.byTeam.map((row) => (
+              <li key={row.teamId ?? "__no_team"} className="rounded-md bg-muted/40 px-2 py-1.5">
+                <div className="font-medium">{row.teamName ?? "No team"}</div>
+                <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                  <span>WIP: {row.wip}</span>
+                  <span>Blocked: {row.blocked}</span>
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
+                  {Object.entries(row.byStatus).map(([status, count]) => (
+                    <span key={status}>
+                      {issueFilterLabel(status)}: {count}
+                    </span>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {showRichSubIssuesSection ? (
         <div className="space-y-3">

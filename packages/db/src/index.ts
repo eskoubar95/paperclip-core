@@ -30,5 +30,11 @@ export {
   createEmbeddedPostgresLogBuffer,
   formatEmbeddedPostgresError,
 } from "./embedded-postgres-error.js";
+export {
+  isWindowsSharedMemoryStuckState,
+  stompWindowsPostgresProcesses,
+  sleepMs,
+  waitForLocalPortAcceptingConnections,
+} from "./windows-embedded-pg-recover.js";
 export { issueRelations } from "./schema/issue_relations.js";
 export * from "./schema/index.js";

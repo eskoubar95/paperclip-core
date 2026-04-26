@@ -20,7 +20,15 @@ export interface IssueAssignmentWakeupDeps {
 
 export function queueIssueAssignmentWakeup(input: {
   heartbeat: IssueAssignmentWakeupDeps;
-  issue: { id: string; assigneeAgentId: string | null; status: string };
+  issue: {
+    id: string;
+    assigneeAgentId: string | null;
+    status: string;
+    teamId?: string | null;
+    workstreamRole?: string | null;
+    team?: { id: string; name: string; slug: string; status: string } | null;
+    teamLead?: { userId: string | null; agentId: string | null } | null;
+  };
   reason: string;
   mutation: string;
   contextSource: string;
@@ -38,7 +46,15 @@ export function queueIssueAssignmentWakeup(input: {
       payload: { issueId: input.issue.id, mutation: input.mutation },
       requestedByActorType: input.requestedByActorType,
       requestedByActorId: input.requestedByActorId ?? null,
-      contextSnapshot: { issueId: input.issue.id, source: input.contextSource },
+      contextSnapshot: {
+        issueId: input.issue.id,
+        source: input.contextSource,
+        teamId: input.issue.teamId ?? null,
+        workstreamRole: input.issue.workstreamRole ?? null,
+        teamName: input.issue.team?.name ?? null,
+        teamLeadUserId: input.issue.teamLead?.userId ?? null,
+        teamLeadAgentId: input.issue.teamLead?.agentId ?? null,
+      },
     })
     .catch((err) => {
       logger.warn({ err, issueId: input.issue.id }, "failed to wake assignee on issue assignment");

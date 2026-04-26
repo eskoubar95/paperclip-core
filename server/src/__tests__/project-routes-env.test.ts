@@ -30,6 +30,8 @@ vi.mock("../services/index.js", () => ({
   projectService: () => mockProjectService,
   secretService: () => mockSecretService,
   workspaceOperationService: () => mockWorkspaceOperationService,
+  accessService: () => ({}),
+  agentService: () => ({ getById: vi.fn() }),
 }));
 
 vi.mock("../services/workspace-runtime.js", () => ({
@@ -47,6 +49,8 @@ function registerModuleMocks() {
     projectService: () => mockProjectService,
     secretService: () => mockSecretService,
     workspaceOperationService: () => mockWorkspaceOperationService,
+    accessService: () => ({}),
+    agentService: () => ({ getById: vi.fn() }),
   }));
 
   vi.doMock("../services/workspace-runtime.js", () => ({
@@ -188,10 +192,11 @@ describe("project env routes", () => {
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        details: {
+        details: expect.objectContaining({
           changedKeys: ["env"],
           envKeys: ["PLAIN_KEY"],
-        },
+          leadAgentIdChanged: false,
+        }),
       }),
     );
   });

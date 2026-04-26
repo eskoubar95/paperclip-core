@@ -207,6 +207,8 @@ function createIssue(): Issue {
     id: "issue-1",
     identifier: "PAP-807",
     companyId: "company-1",
+    teamId: null,
+    workstreamRole: null,
     projectId: null,
     projectWorkspaceId: null,
     goalId: null,

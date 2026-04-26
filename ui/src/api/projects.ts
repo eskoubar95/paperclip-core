@@ -1,5 +1,7 @@
 import type {
   Project,
+  ProjectOrchestrationPlanInput,
+  ProjectOrchestrationPlanResult,
   ProjectWorkspace,
   WorkspaceOperation,
   WorkspaceRuntimeControlTarget,
@@ -22,6 +24,11 @@ export const projectsApi = {
   get: (id: string, companyId?: string) => api.get<Project>(projectPath(id, companyId)),
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Project>(`/companies/${companyId}/projects`, data),
+  planOrchestration: (companyId: string, body: ProjectOrchestrationPlanInput) =>
+    api.post<ProjectOrchestrationPlanResult>(
+      `/companies/${encodeURIComponent(companyId)}/project-orchestration/plan`,
+      body,
+    ),
   update: (id: string, data: Record<string, unknown>, companyId?: string) =>
     api.patch<Project>(projectPath(id, companyId), data),
   listWorkspaces: (projectId: string, companyId?: string) =>

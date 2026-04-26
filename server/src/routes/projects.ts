@@ -6,13 +6,22 @@ import {
   findWorkspaceCommandDefinition,
   isUuidLike,
   matchWorkspaceRuntimeServiceToCommand,
+  projectOrchestrationPlanSchema,
   updateProjectSchema,
   updateProjectWorkspaceSchema,
   workspaceRuntimeControlTargetSchema,
+  type PermissionKey,
 } from "@paperclipai/shared";
 import { trackProjectCreated } from "@paperclipai/shared/telemetry";
 import { validate } from "../middleware/validate.js";
-import { projectService, logActivity, secretService, workspaceOperationService } from "../services/index.js";
+import {
+  accessService,
+  agentService,
+  logActivity,
+  projectService,
+  secretService,
+  workspaceOperationService,
+} from "../services/index.js";
 import { conflict } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import {
@@ -29,13 +38,37 @@ import {
 } from "./workspace-command-authz.js";
 import { assertCanManageProjectWorkspaceRuntimeServices } from "./workspace-runtime-service-authz.js";
 import { getTelemetryClient } from "../telemetry.js";
+import { assertCompanyPrincipalPermission } from "./company-principal-permission.js";
+import { projectOrchestrationService } from "../services/project-orchestration.js";
 
 export function projectRoutes(db: Db) {
   const router = Router();
   const svc = projectService(db);
   const secretsSvc = secretService(db);
   const workspaceOperations = workspaceOperationService(db);
+  const access = accessService(db);
+  const agentsSvc = agentService(db);
+  const orchestration = projectOrchestrationService(db);
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
+
+  const permissionDeps = { access, agentsSvc };
+
+  function classifyProjectUpdatePermissionKeys(body: Record<string, unknown>): PermissionKey[] {
+    const keys = new Set(Object.keys(body).filter((k) => body[k] !== undefined));
+    const needs = new Set<PermissionKey>();
+    if (keys.has("leadAgentId")) needs.add("projects:manage_owner");
+    if (keys.has("executionWorkspacePolicy") || keys.has("env")) needs.add("projects:manage_workspace");
+    const metadataKeys = ["name", "description", "status", "goalIds", "goalId", "targetDate", "color", "archivedAt"];
+    if (metadataKeys.some((k) => keys.has(k))) needs.add("projects:update");
+    return [...needs];
+  }
+
+  async function assertProjectUpdatePermissions(req: Request, companyId: string, body: Record<string, unknown>) {
+    const needed = classifyProjectUpdatePermissionKeys(body);
+    for (const key of needed) {
+      await assertCompanyPrincipalPermission(req, companyId, key, permissionDeps);
+    }
+  }
 
   async function resolveCompanyIdForProjectReference(req: Request) {
     const companyIdQuery = req.query.companyId;
@@ -80,6 +113,17 @@ export function projectRoutes(db: Db) {
     res.json(result);
   });
 
+  router.post(
+    "/companies/:companyId/project-orchestration/plan",
+    validate(projectOrchestrationPlanSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      const result = await orchestration.plan(companyId, req.body);
+      res.json(result);
+    },
+  );
+
   router.get("/projects/:id", async (req, res) => {
     const id = req.params.id as string;
     const project = await svc.getById(id);
@@ -94,11 +138,15 @@ export function projectRoutes(db: Db) {
   router.post("/companies/:companyId/projects", validate(createProjectSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    await assertCompanyPrincipalPermission(req, companyId, "projects:create", permissionDeps);
     type CreateProjectPayload = Parameters<typeof svc.create>[1] & {
       workspace?: Parameters<typeof svc.createWorkspace>[1];
     };
 
     const { workspace, ...projectData } = req.body as CreateProjectPayload;
+    if (workspace) {
+      await assertCompanyPrincipalPermission(req, companyId, "projects:manage_workspace", permissionDeps);
+    }
     assertNoAgentHostWorkspaceCommandMutation(
       req,
       [
@@ -157,6 +205,7 @@ export function projectRoutes(db: Db) {
     }
     assertCompanyAccess(req, existing.companyId);
     const body = { ...req.body };
+    await assertProjectUpdatePermissions(req, existing.companyId, body);
     assertNoAgentHostWorkspaceCommandMutation(
       req,
       collectProjectExecutionWorkspaceCommandPaths(body.executionWorkspacePolicy),
@@ -177,6 +226,7 @@ export function projectRoutes(db: Db) {
     }
 
     const actor = getActorInfo(req);
+    const ownerChanged = Object.prototype.hasOwnProperty.call(req.body, "leadAgentId");
     await logActivity(db, {
       companyId: project.companyId,
       actorType: actor.actorType,
@@ -187,6 +237,7 @@ export function projectRoutes(db: Db) {
       entityId: project.id,
       details: {
         changedKeys: Object.keys(req.body).sort(),
+        leadAgentIdChanged: ownerChanged,
         envKeys:
           body.env && typeof body.env === "object" && !Array.isArray(body.env)
             ? Object.keys(body.env as Record<string, unknown>).sort()
@@ -217,6 +268,7 @@ export function projectRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, existing.companyId);
+    await assertCompanyPrincipalPermission(req, existing.companyId, "projects:manage_workspace", permissionDeps);
     assertNoAgentHostWorkspaceCommandMutation(
       req,
       collectProjectWorkspaceCommandPaths(req.body),
@@ -259,6 +311,7 @@ export function projectRoutes(db: Db) {
         return;
       }
       assertCompanyAccess(req, existing.companyId);
+      await assertCompanyPrincipalPermission(req, existing.companyId, "projects:manage_workspace", permissionDeps);
       assertNoAgentHostWorkspaceCommandMutation(
         req,
         collectProjectWorkspaceCommandPaths(req.body),
@@ -571,6 +624,7 @@ export function projectRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, existing.companyId);
+    await assertCompanyPrincipalPermission(req, existing.companyId, "projects:manage_workspace", permissionDeps);
     const workspace = await svc.removeWorkspace(id, workspaceId);
     if (!workspace) {
       res.status(404).json({ error: "Project workspace not found" });
@@ -603,6 +657,7 @@ export function projectRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, existing.companyId);
+    await assertCompanyPrincipalPermission(req, existing.companyId, "projects:update", permissionDeps);
     const project = await svc.remove(id);
     if (!project) {
       res.status(404).json({ error: "Project not found" });

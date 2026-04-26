@@ -112,6 +112,9 @@ export interface CompanyPortabilityIssueManifestEntry {
   executionWorkspaceSettings: Record<string, unknown> | null;
   assigneeAdapterOverrides: Record<string, unknown> | null;
   metadata: Record<string, unknown> | null;
+  /** Team slug; matched to `teams.slug` on import. */
+  teamSlug?: string | null;
+  workstreamRole?: string | null;
 }
 
 export interface CompanyPortabilityAgentManifestEntry {

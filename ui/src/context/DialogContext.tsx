@@ -16,6 +16,8 @@ interface NewIssueDefaults {
   assigneeUserId?: string;
   title?: string;
   description?: string;
+  teamId?: string;
+  workstreamRole?: string;
 }
 
 interface NewGoalDefaults {

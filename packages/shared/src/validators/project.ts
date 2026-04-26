@@ -121,3 +121,26 @@ export const updateProjectSchema = z.object(projectFields).partial();
 export type UpdateProject = z.infer<typeof updateProjectSchema>;
 
 export type ProjectExecutionWorkspacePolicy = z.infer<typeof projectExecutionWorkspacePolicySchema>;
+
+export const projectOrchestrationPlanSchema = z
+  .object({
+    issueTitle: z.string().min(1).optional(),
+    preferredProjectId: z.string().uuid().optional().nullable(),
+    suggestedProjectName: z.string().min(1).optional(),
+  })
+  .strict();
+
+export type ProjectOrchestrationPlanInput = z.infer<typeof projectOrchestrationPlanSchema>;
+
+export type ProjectOrchestrationPlanResult =
+  | {
+      action: "use_existing";
+      projectId: string;
+      matchedBy: "preferred_id" | "name_ci";
+    }
+  | {
+      action: "create_new";
+      projectId: null;
+      suggestedName: string;
+      matchedBy: "none";
+    };

@@ -327,6 +327,8 @@ describe("optimistic issue comments", () => {
       {
         id: "issue-1",
         companyId: "company-1",
+        teamId: null,
+        workstreamRole: null,
         projectId: null,
         projectWorkspaceId: null,
         goalId: null,
@@ -380,6 +382,8 @@ describe("optimistic issue comments", () => {
       {
         id: "issue-1",
         companyId: "company-1",
+        teamId: null,
+        workstreamRole: null,
         projectId: "project-1",
         projectWorkspaceId: "workspace-1",
         goalId: null,
@@ -568,6 +572,8 @@ describe("optimistic issue comments", () => {
       {
         id: "issue-1",
         companyId: "company-1",
+        teamId: null,
+        workstreamRole: null,
         projectId: null,
         projectWorkspaceId: null,
         goalId: null,
@@ -609,6 +615,8 @@ describe("optimistic issue comments", () => {
       {
         id: "issue-2",
         companyId: "company-1",
+        teamId: null,
+        workstreamRole: null,
         projectId: null,
         projectWorkspaceId: null,
         goalId: null,

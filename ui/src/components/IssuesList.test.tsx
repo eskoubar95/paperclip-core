@@ -134,6 +134,8 @@ function createIssue(overrides: Partial<Issue> = {}): Issue {
     lastActivityAt: null,
     isUnreadForMe: false,
     ...overrides,
+    teamId: overrides.teamId ?? null,
+    workstreamRole: overrides.workstreamRole ?? null,
   };
 }
 

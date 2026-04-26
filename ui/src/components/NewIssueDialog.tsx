@@ -5,6 +5,7 @@ import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { executionWorkspacesApi } from "../api/execution-workspaces";
 import { issuesApi } from "../api/issues";
+import { teamsApi } from "../api/teams";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
@@ -57,6 +58,8 @@ import {
 import { cn } from "../lib/utils";
 import { extractProviderIdWithFallback } from "../lib/model-utils";
 import { issueStatusText, issueStatusTextDefault, priorityColor, priorityColorDefault } from "../lib/status-colors";
+import { issueFilterLabel } from "../lib/issue-filters";
+import { ISSUE_WORKSTREAM_ROLES } from "@paperclipai/shared";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { AgentIcon } from "./AgentIconPicker";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
@@ -82,6 +85,8 @@ interface IssueDraft {
   executionWorkspaceMode?: string;
   selectedExecutionWorkspaceId?: string;
   useIsolatedExecutionWorkspace?: boolean;
+  teamId?: string;
+  workstreamRole?: string;
 }
 
 type StagedIssueFile = {
@@ -295,6 +300,9 @@ export function NewIssueDialog() {
   const [participantMenuOpen, setParticipantMenuOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [projectWorkspaceId, setProjectWorkspaceId] = useState("");
+  const [teamId, setTeamId] = useState("");
+  const [workstreamRole, setWorkstreamRole] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [assigneeOptionsOpen, setAssigneeOptionsOpen] = useState(false);
   const [assigneeModelOverride, setAssigneeModelOverride] = useState("");
   const [assigneeThinkingEffort, setAssigneeThinkingEffort] = useState("");
@@ -365,6 +373,16 @@ export function NewIssueDialog() {
     queryFn: () => instanceSettingsApi.getExperimental(),
     enabled: newIssueOpen,
     retry: false,
+  });
+  const { data: companyTeams = [] } = useQuery({
+    queryKey: effectiveCompanyId ? queryKeys.teams.list(effectiveCompanyId) : ["teams", "off"],
+    queryFn: () => teamsApi.list(effectiveCompanyId!),
+    enabled: Boolean(effectiveCompanyId) && newIssueOpen,
+  });
+  const { data: issueTemplates = [] } = useQuery({
+    queryKey: effectiveCompanyId ? queryKeys.teams.issueTemplates(effectiveCompanyId) : ["issue-templates", "off"],
+    queryFn: () => teamsApi.listIssueTemplates(effectiveCompanyId!),
+    enabled: Boolean(effectiveCompanyId) && newIssueOpen,
   });
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
   const activeProjects = useMemo(
@@ -487,6 +505,8 @@ export function NewIssueDialog() {
       approverValue,
       projectId,
       projectWorkspaceId,
+      teamId,
+      workstreamRole,
       assigneeModelOverride,
       assigneeThinkingEffort,
       assigneeChrome,
@@ -503,6 +523,8 @@ export function NewIssueDialog() {
     approverValue,
     projectId,
     projectWorkspaceId,
+    teamId,
+    workstreamRole,
     assigneeModelOverride,
     assigneeThinkingEffort,
     assigneeChrome,
@@ -539,6 +561,8 @@ export function NewIssueDialog() {
       setAssigneeChrome(false);
       setExecutionWorkspaceMode(defaultExecutionWorkspaceMode);
       setSelectedExecutionWorkspaceId(newIssueDefaults.executionWorkspaceId ?? "");
+      setTeamId(newIssueDefaults.teamId ?? "");
+      setWorkstreamRole(newIssueDefaults.workstreamRole ?? "");
       executionWorkspaceDefaultProjectId.current = defaultProjectId || null;
     } else if (newIssueDefaults.title) {
       setTitle(newIssueDefaults.title);
@@ -559,6 +583,8 @@ export function NewIssueDialog() {
       setAssigneeChrome(false);
       setExecutionWorkspaceMode(defaultExecutionWorkspaceModeForProject(defaultProject));
       setSelectedExecutionWorkspaceId("");
+      setTeamId(newIssueDefaults.teamId ?? "");
+      setWorkstreamRole(newIssueDefaults.workstreamRole ?? "");
       executionWorkspaceDefaultProjectId.current = defaultProjectId || null;
     } else if (draft && draft.title.trim()) {
       const restoredProjectId = newIssueDefaults.projectId ?? draft.projectId;
@@ -586,6 +612,8 @@ export function NewIssueDialog() {
           ?? (draft.useIsolatedExecutionWorkspace ? "isolated_workspace" : defaultExecutionWorkspaceModeForProject(restoredProject)),
       );
       setSelectedExecutionWorkspaceId(draft.selectedExecutionWorkspaceId ?? "");
+      setTeamId(draft.teamId ?? newIssueDefaults.teamId ?? "");
+      setWorkstreamRole(draft.workstreamRole ?? newIssueDefaults.workstreamRole ?? "");
       executionWorkspaceDefaultProjectId.current = restoredProjectId || null;
     } else {
       const defaultProjectId = newIssueDefaults.projectId ?? "";
@@ -604,6 +632,8 @@ export function NewIssueDialog() {
       setAssigneeChrome(false);
       setExecutionWorkspaceMode(defaultExecutionWorkspaceModeForProject(defaultProject));
       setSelectedExecutionWorkspaceId("");
+      setTeamId(newIssueDefaults.teamId ?? "");
+      setWorkstreamRole(newIssueDefaults.workstreamRole ?? "");
       executionWorkspaceDefaultProjectId.current = defaultProjectId || null;
     }
   }, [newIssueOpen, newIssueDefaults, orderedProjects]);
@@ -647,6 +677,9 @@ export function NewIssueDialog() {
     setShowApproverRow(false);
     setProjectId("");
     setProjectWorkspaceId("");
+    setTeamId("");
+    setWorkstreamRole("");
+    setSelectedTemplateId("");
     setAssigneeOptionsOpen(false);
     setAssigneeModelOverride("");
     setAssigneeThinkingEffort("");
@@ -672,6 +705,9 @@ export function NewIssueDialog() {
     setShowApproverRow(false);
     setProjectId("");
     setProjectWorkspaceId("");
+    setTeamId("");
+    setWorkstreamRole("");
+    setSelectedTemplateId("");
     setAssigneeModelOverride("");
     setAssigneeThinkingEffort("");
     setAssigneeChrome(false);
@@ -732,6 +768,12 @@ export function NewIssueDialog() {
         : {}),
       ...(executionWorkspaceSettings ? { executionWorkspaceSettings } : {}),
       ...(executionPolicy ? { executionPolicy } : {}),
+      ...(teamId
+        ? {
+            teamId,
+            ...(workstreamRole ? { workstreamRole } : {}),
+          }
+        : {}),
     });
   }
 
@@ -1047,6 +1089,35 @@ export function NewIssueDialog() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          {issueTemplates.length > 0 ? (
+            <div className="px-4 pt-3 flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-muted-foreground shrink-0">Template</span>
+              <select
+                className="h-8 flex-1 min-w-[12rem] max-w-md rounded-md border border-border bg-background px-2 text-xs"
+                value={selectedTemplateId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setSelectedTemplateId(id);
+                  const t = issueTemplates.find((x) => x.id === id);
+                  if (!t) return;
+                  setDescription(t.bodyTemplate ?? "");
+                  setTeamId(t.defaultTeamId ?? "");
+                  setWorkstreamRole(t.defaultWorkstreamRole ?? "");
+                  if (t.defaultStatus) setStatus(t.defaultStatus);
+                  if (t.defaultPriority) setPriority(t.defaultPriority);
+                }}
+                disabled={createIssue.isPending}
+                aria-label="Issue template"
+              >
+                <option value="">None</option>
+                {issueTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           {/* Title */}
           <div className="px-4 pt-4 pb-2">
             <textarea
@@ -1193,6 +1264,45 @@ export function NewIssueDialog() {
                   );
                 }}
               />
+              {companyTeams.length > 0 ? (
+                <>
+                  <span className="text-muted-foreground/80">·</span>
+                  <select
+                    className="h-7 max-w-[10rem] rounded-md border border-border bg-background px-1.5 text-xs"
+                    value={teamId}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setTeamId(next);
+                      if (!next) setWorkstreamRole("");
+                    }}
+                    disabled={createIssue.isPending}
+                    aria-label="Team"
+                  >
+                    <option value="">No team</option>
+                    {companyTeams.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                  {teamId ? (
+                    <select
+                      className="h-7 max-w-[10rem] rounded-md border border-border bg-background px-1.5 text-xs"
+                      value={workstreamRole}
+                      onChange={(e) => setWorkstreamRole(e.target.value)}
+                      disabled={createIssue.isPending}
+                      aria-label="Workstream role"
+                    >
+                      <option value="">Workstream (optional)</option>
+                      {ISSUE_WORKSTREAM_ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {issueFilterLabel(r)}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
+                </>
+              ) : null}
 
               {/* Three-dot menu to add Reviewer / Approver rows */}
               <Popover open={participantMenuOpen} onOpenChange={setParticipantMenuOpen}>
@@ -1238,6 +1348,12 @@ export function NewIssueDialog() {
               </Popover>
               </div>
             </div>
+            {projectId && !teamId && companyTeams.length > 0 ? (
+              <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3 shrink-0" />
+                Add a team so this work appears in team boards and orchestration views.
+              </p>
+            ) : null}
 
             {/* Reviewer row */}
             {showReviewerRow && (

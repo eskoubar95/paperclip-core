@@ -156,6 +156,39 @@ export type IssueExecutionDecisionOutcome = (typeof ISSUE_EXECUTION_DECISION_OUT
 export const GOAL_LEVELS = ["company", "team", "agent", "task"] as const;
 export type GoalLevel = (typeof GOAL_LEVELS)[number];
 
+/** First-class `teams` table lifecycle (distinct from goal.level "team"). */
+export const TEAM_STATUSES = ["active", "archived"] as const;
+export type TeamStatus = (typeof TEAM_STATUSES)[number];
+
+/**
+ * Role within a pod/team (membership on `team_memberships`).
+ * Keep separate from `IssueExecutionPolicy` stage types and from `AGENT_ROLES`.
+ */
+export const TEAM_MEMBERSHIP_ROLES = [
+  "team_lead",
+  "backend",
+  "frontend",
+  "qa",
+  "program_lead",
+  "reviewer",
+  "documentation",
+] as const;
+export type TeamMembershipRole = (typeof TEAM_MEMBERSHIP_ROLES)[number];
+
+/**
+ * Workstream / queue on an issue (`issues.workstream_role`).
+ * Subset of membership roles; optional on issues.
+ */
+export const ISSUE_WORKSTREAM_ROLES = [
+  "team_lead",
+  "backend",
+  "frontend",
+  "qa",
+  "reviewer",
+  "documentation",
+] as const;
+export type IssueWorkstreamRole = (typeof ISSUE_WORKSTREAM_ROLES)[number];
+
 export const GOAL_STATUSES = ["planned", "active", "achieved", "cancelled"] as const;
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
 
@@ -408,6 +441,11 @@ export const PERMISSION_KEYS = [
   "tasks:assign",
   "tasks:assign_scope",
   "joins:approve",
+  "projects:create",
+  "projects:update",
+  "projects:assign",
+  "projects:manage_owner",
+  "projects:manage_workspace",
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 

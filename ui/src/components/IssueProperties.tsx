@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { Link } from "@/lib/router";
 import type { Issue } from "@paperclipai/shared";
+import { ISSUE_WORKSTREAM_ROLES } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { accessApi } from "../api/access";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { issuesApi } from "../api/issues";
+import { teamsApi } from "../api/teams";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -19,10 +21,11 @@ import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { Identity } from "./Identity";
 import { formatDate, cn, projectUrl } from "../lib/utils";
+import { issueFilterLabel } from "../lib/issue-filters";
 import { timeAgo } from "../lib/timeAgo";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { User, Hexagon, ArrowUpRight, Tag, Plus, GitBranch, FolderOpen, Check, ExternalLink } from "lucide-react";
+import { User, Hexagon, ArrowUpRight, Tag, Plus, GitBranch, FolderOpen, Check, ExternalLink, Users, UserCog } from "lucide-react";
 import { AgentIcon } from "./AgentIconPicker";
 
 function TruncatedCopyable({ value, icon: Icon }: { value: string; icon: React.ComponentType<{ className?: string }> }) {
@@ -177,6 +180,9 @@ export function IssueProperties({
   const [labelSearch, setLabelSearch] = useState("");
   const [newLabelName, setNewLabelName] = useState("");
   const [newLabelColor, setNewLabelColor] = useState("#6366f1");
+  const [teamOpen, setTeamOpen] = useState(false);
+  const [teamSearch, setTeamSearch] = useState("");
+  const [workstreamOpen, setWorkstreamOpen] = useState(false);
 
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
@@ -215,6 +221,11 @@ export function IssueProperties({
     queryFn: () => issuesApi.listLabels(companyId!),
     enabled: !!companyId,
   });
+  const { data: companyTeams = [] } = useQuery({
+    queryKey: queryKeys.teams.list(companyId!),
+    queryFn: () => teamsApi.list(companyId!),
+    enabled: !!companyId,
+  });
 
   const { data: allIssues } = useQuery({
     queryKey: queryKeys.issues.list(companyId!),
@@ -228,6 +239,22 @@ export function IssueProperties({
       await queryClient.invalidateQueries({ queryKey: queryKeys.issues.labels(companyId!) });
       onUpdate({ labelIds: [...(issue.labelIds ?? []), created.id] });
       setNewLabelName("");
+    },
+  });
+
+  const assignToRole = useMutation({
+    mutationFn: async () => {
+      if (!companyId || !issue.teamId || !issue.workstreamRole) throw new Error("Team and workstream required");
+      return teamsApi.assignToRole(companyId, issue.teamId, {
+        issueId: issue.id,
+        workstreamRole: issue.workstreamRole,
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issue.id) });
+      if (companyId) {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
+      }
     },
   });
 
@@ -749,6 +776,115 @@ export function IssueProperties({
     </>
   );
 
+  const teamDisplayName = issue.team?.name
+    ?? companyTeams.find((t) => t.id === issue.teamId)?.name
+    ?? null;
+
+  const teamTrigger = issue.teamId ? (
+    <>
+      <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+      <span className="text-sm break-words min-w-0">{teamDisplayName ?? issue.teamId.slice(0, 8)}</span>
+    </>
+  ) : (
+    <>
+      <Users className="h-3.5 w-3.5 text-muted-foreground" />
+      <span className="text-sm text-muted-foreground">No team</span>
+    </>
+  );
+
+  const teamContent = (
+    <>
+      <input
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        placeholder="Search teams..."
+        value={teamSearch}
+        onChange={(e) => setTeamSearch(e.target.value)}
+        autoFocus={!inline}
+      />
+      <div className="max-h-48 overflow-y-auto overscroll-contain">
+        <button
+          className={cn(
+            "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+            !issue.teamId && "bg-accent",
+          )}
+          onClick={() => {
+            onUpdate({ teamId: null, workstreamRole: null });
+            setTeamOpen(false);
+          }}
+        >
+          No team
+        </button>
+        {companyTeams
+          .filter((t) => {
+            if (!teamSearch.trim()) return true;
+            const q = teamSearch.toLowerCase();
+            return t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q);
+          })
+          .map((t) => (
+            <button
+              key={t.id}
+              className={cn(
+                "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                t.id === issue.teamId && "bg-accent",
+              )}
+              onClick={() => {
+                onUpdate({ teamId: t.id });
+                setTeamOpen(false);
+              }}
+            >
+              {t.name}
+            </button>
+          ))}
+      </div>
+    </>
+  );
+
+  const workstreamTrigger = issue.workstreamRole ? (
+    <>
+      <UserCog className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+      <span className="text-sm">{issueFilterLabel(issue.workstreamRole)}</span>
+    </>
+  ) : (
+    <>
+      <UserCog className="h-3.5 w-3.5 text-muted-foreground" />
+      <span className="text-sm text-muted-foreground">No workstream role</span>
+    </>
+  );
+
+  const workstreamContent = (
+    <>
+      <div className="max-h-48 overflow-y-auto overscroll-contain">
+        <button
+          className={cn(
+            "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+            !issue.workstreamRole && "bg-accent",
+          )}
+          onClick={() => {
+            onUpdate({ workstreamRole: null });
+            setWorkstreamOpen(false);
+          }}
+        >
+          No workstream role
+        </button>
+        {ISSUE_WORKSTREAM_ROLES.map((role) => (
+          <button
+            key={role}
+            className={cn(
+              "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+              role === issue.workstreamRole && "bg-accent",
+            )}
+            onClick={() => {
+              onUpdate({ workstreamRole: role });
+              setWorkstreamOpen(false);
+            }}
+          >
+            {issueFilterLabel(role)}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+
   const blockedByIds = issue.blockedBy?.map((relation) => relation.id) ?? [];
   const descendantIssueIds = useMemo(() => {
     if (!allIssues?.length) return new Set<string>();
@@ -1006,6 +1142,59 @@ export function IssueProperties({
         >
           {projectContent}
         </PropertyPicker>
+
+        <PropertyPicker
+          inline={inline}
+          label="Team"
+          open={teamOpen}
+          onOpenChange={(open) => {
+            setTeamOpen(open);
+            if (!open) setTeamSearch("");
+          }}
+          triggerContent={teamTrigger}
+          triggerClassName="min-w-0 max-w-full"
+          popoverClassName="w-fit min-w-[11rem]"
+        >
+          {teamContent}
+        </PropertyPicker>
+
+        {issue.teamId ? (
+          <PropertyPicker
+            inline={inline}
+            label="Workstream"
+            open={workstreamOpen}
+            onOpenChange={setWorkstreamOpen}
+            triggerContent={workstreamTrigger}
+            triggerClassName="min-w-0 max-w-full"
+            popoverClassName="w-52"
+            extra={
+              issue.workstreamRole ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center h-5 px-1.5 rounded text-[10px] font-medium border border-border hover:bg-accent/50 text-muted-foreground hover:text-foreground"
+                  title="Pick the first active member for this workstream role"
+                  disabled={assignToRole.isPending}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    assignToRole.mutate();
+                  }}
+                >
+                  Assign by role
+                </button>
+              ) : undefined
+            }
+          >
+            {workstreamContent}
+          </PropertyPicker>
+        ) : null}
+
+        {issue.status === "in_progress" && !issue.teamId ? (
+          <PropertyRow label="">
+            <span className="text-xs text-amber-600 dark:text-amber-400">
+              In progress without a team — add a team for orchestration views.
+            </span>
+          </PropertyRow>
+        ) : null}
 
         <PropertyPicker
           inline={inline}

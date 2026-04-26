@@ -7,6 +7,8 @@ export type IssueFilterState = {
   creators: string[];
   labels: string[];
   projects: string[];
+  teams: string[];
+  workstreams: string[];
   workspaces: string[];
   hideRoutineExecutions: boolean;
 };
@@ -18,6 +20,8 @@ export const defaultIssueFilterState: IssueFilterState = {
   creators: [],
   labels: [],
   projects: [],
+  teams: [],
+  workstreams: [],
   workspaces: [],
   hideRoutineExecutions: false,
 };
@@ -58,6 +62,8 @@ export function normalizeIssueFilterState(value: unknown): IssueFilterState {
     creators: normalizeIssueFilterValueArray(candidate.creators),
     labels: normalizeIssueFilterValueArray(candidate.labels),
     projects: normalizeIssueFilterValueArray(candidate.projects),
+    teams: normalizeIssueFilterValueArray(candidate.teams),
+    workstreams: normalizeIssueFilterValueArray(candidate.workstreams),
     workspaces: normalizeIssueFilterValueArray(candidate.workspaces),
     hideRoutineExecutions: candidate.hideRoutineExecutions === true,
   };
@@ -110,6 +116,17 @@ export function applyIssueFilters(
   if (state.projects.length > 0) {
     result = result.filter((issue) => issue.projectId != null && state.projects.includes(issue.projectId));
   }
+  if (state.teams.length > 0) {
+    result = result.filter(
+      (issue) => issue.teamId != null && state.teams.includes(issue.teamId),
+    );
+  }
+  if (state.workstreams.length > 0) {
+    result = result.filter(
+      (issue) =>
+        issue.workstreamRole != null && state.workstreams.includes(issue.workstreamRole),
+    );
+  }
   if (state.workspaces.length > 0) {
     result = result.filter((issue) => {
       const workspaceId = resolveIssueFilterWorkspaceId(issue);
@@ -130,6 +147,8 @@ export function countActiveIssueFilters(
   if (state.creators.length > 0) count += 1;
   if (state.labels.length > 0) count += 1;
   if (state.projects.length > 0) count += 1;
+  if (state.teams.length > 0) count += 1;
+  if (state.workstreams.length > 0) count += 1;
   if (state.workspaces.length > 0) count += 1;
   if (enableRoutineVisibilityFilter && state.hideRoutineExecutions) count += 1;
   return count;

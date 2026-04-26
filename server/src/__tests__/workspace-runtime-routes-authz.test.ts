@@ -22,6 +22,13 @@ const mockSecretService = vi.hoisted(() => ({
 }));
 
 const mockWorkspaceOperationService = vi.hoisted(() => ({}));
+const mockAccessService = vi.hoisted(() => ({
+  canUser: vi.fn().mockResolvedValue(true),
+  hasPermission: vi.fn().mockResolvedValue(true),
+}));
+const mockAgentService = vi.hoisted(() => ({
+  getById: vi.fn(),
+}));
 const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
 const mockAssertCanManageProjectWorkspaceRuntimeServices = vi.hoisted(() => vi.fn());
@@ -33,6 +40,8 @@ function registerModuleMocks() {
   }));
 
   vi.doMock("../services/index.js", () => ({
+    accessService: () => mockAccessService,
+    agentService: () => mockAgentService,
     executionWorkspaceService: () => mockExecutionWorkspaceService,
     logActivity: mockLogActivity,
     projectService: () => mockProjectService,

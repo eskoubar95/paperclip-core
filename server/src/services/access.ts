@@ -5,7 +5,7 @@ import {
   instanceUserRoles,
   principalPermissionGrants,
 } from "@paperclipai/db";
-import type { PermissionKey, PrincipalType } from "@paperclipai/shared";
+import { implicitPermissionsForHumanMembershipRole, type PermissionKey, type PrincipalType } from "@paperclipai/shared";
 import { conflict } from "../errors.js";
 
 type MembershipRow = typeof companyMemberships.$inferSelect;
@@ -73,7 +73,12 @@ export function accessService(db: Db) {
   ): Promise<boolean> {
     if (!userId) return false;
     if (await isInstanceAdmin(userId)) return true;
-    return hasPermission(companyId, "user", userId, permissionKey);
+    if (await hasPermission(companyId, "user", userId, permissionKey)) return true;
+
+    const membership = await getMembership(companyId, "user", userId);
+    if (!membership || membership.status !== "active") return false;
+    const implicit = implicitPermissionsForHumanMembershipRole(membership.membershipRole);
+    return implicit.includes(permissionKey);
   }
 
   async function listMembers(companyId: string) {

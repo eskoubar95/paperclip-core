@@ -54,6 +54,8 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     createdAt: now,
     updatedAt: now,
     ...overrides,
+    teamId: overrides.teamId ?? null,
+    workstreamRole: overrides.workstreamRole ?? null,
   };
 }
 

@@ -6,11 +6,13 @@ import type {
   IssueOriginKind,
   IssuePriority,
   IssueStatus,
+  IssueWorkstreamRole,
 } from "../constants.js";
 import type { Goal } from "./goal.js";
 import type { Project, ProjectWorkspace } from "./project.js";
 import type { ExecutionWorkspace, IssueExecutionWorkspaceSettings } from "./workspace-runtime.js";
 import type { IssueWorkProduct } from "./work-product.js";
+import type { TeamLeadRefs, TeamSummary } from "./team.js";
 
 export interface IssueAncestorProject {
   id: string;
@@ -176,6 +178,12 @@ export interface IssueExecutionDecision {
 export interface Issue {
   id: string;
   companyId: string;
+  teamId: string | null;
+  workstreamRole: IssueWorkstreamRole | null;
+  /** Hydrated team row when issue service joins teams (optional in list). */
+  team?: TeamSummary | null;
+  /** Best-effort team lead principal ids for agent escalation (optional). */
+  teamLead?: TeamLeadRefs | null;
   projectId: string | null;
   projectWorkspaceId: string | null;
   goalId: string | null;

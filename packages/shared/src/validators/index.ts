@@ -130,6 +130,9 @@ export {
   type CreateProjectWorkspace,
   type UpdateProjectWorkspace,
   type ProjectExecutionWorkspacePolicy,
+  projectOrchestrationPlanSchema,
+  type ProjectOrchestrationPlanInput,
+  type ProjectOrchestrationPlanResult,
 } from "./project.js";
 
 export {
@@ -159,6 +162,24 @@ export {
   type UpsertIssueDocument,
   type RestoreIssueDocumentRevision,
 } from "./issue.js";
+
+export {
+  createTeamSchema,
+  updateTeamSchema,
+  createTeamMembershipSchema,
+  updateTeamMembershipSchema,
+  issueWorkstreamRoleSchema,
+  createIssueTemplateSchema,
+  updateIssueTemplateSchema,
+  batchKickoffSchema,
+  companyIssueWebhookSchema,
+  type CreateTeam,
+  type UpdateTeam,
+  type CreateIssueTemplate,
+  type UpdateIssueTemplate,
+  type BatchKickoff,
+  type CreateCompanyIssueWebhook,
+} from "./team.js";
 
 export {
   createIssueWorkProductSchema,

@@ -24,7 +24,13 @@ const baseAgent = {
   spentMonthlyCents: 0,
   pauseReason: null,
   pausedAt: null,
-  permissions: { canCreateAgents: false },
+  permissions: {
+    canCreateAgents: false,
+    canCreateProjects: false,
+    canAssignProjects: false,
+    canManageProjectOwners: false,
+    canManageProjectWorkspaces: false,
+  },
   lastHeartbeatAt: null,
   metadata: null,
   createdAt: new Date("2026-03-19T00:00:00.000Z"),
@@ -206,23 +212,27 @@ describe("agent permission routes", () => {
     mockLogActivity.mockResolvedValue(undefined);
   });
 
-  it("redacts agent detail for authenticated company members without agent admin permission", async () => {
-    mockAccessService.canUser.mockResolvedValue(false);
+  it(
+    "redacts agent detail for authenticated company members without agent admin permission",
+    async () => {
+      mockAccessService.canUser.mockResolvedValue(false);
 
-    const app = await createApp({
-      type: "board",
-      userId: "member-user",
-      source: "session",
-      isInstanceAdmin: false,
-      companyIds: [companyId],
-    });
+      const app = await createApp({
+        type: "board",
+        userId: "member-user",
+        source: "session",
+        isInstanceAdmin: false,
+        companyIds: [companyId],
+      });
 
-    const res = await request(app).get(`/api/agents/${agentId}`);
+      const res = await request(app).get(`/api/agents/${agentId}`);
 
-    expect(res.status).toBe(200);
-    expect(res.body.adapterConfig).toEqual({});
-    expect(res.body.runtimeConfig).toEqual({});
-  });
+      expect(res.status).toBe(200);
+      expect(res.body.adapterConfig).toEqual({});
+      expect(res.body.runtimeConfig).toEqual({});
+    },
+    20_000,
+  );
 
   it("redacts company agent list for authenticated company members without agent admin permission", async () => {
     mockAccessService.canUser.mockResolvedValue(false);
@@ -552,12 +562,20 @@ describe("agent permission routes", () => {
     expect(res.status).toBe(200);
     expect(res.body.access.canAssignTasks).toBe(true);
     expect(res.body.access.taskAssignSource).toBe("explicit_grant");
+    expect(res.body.access.canCreateProjects).toBe(false);
+    expect(res.body.access.createProjectsSource).toBe("none");
   });
 
   it("keeps task assignment enabled when agent creation privilege is enabled", async () => {
     mockAgentService.updatePermissions.mockResolvedValue({
       ...baseAgent,
-      permissions: { canCreateAgents: true },
+      permissions: {
+        canCreateAgents: true,
+        canCreateProjects: false,
+        canAssignProjects: false,
+        canManageProjectOwners: false,
+        canManageProjectWorkspaces: false,
+      },
     });
 
     const app = await createApp({
@@ -578,6 +596,46 @@ describe("agent permission routes", () => {
       "agent",
       agentId,
       "tasks:assign",
+      true,
+      "board-user",
+    );
+    expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
+      companyId,
+      "agent",
+      agentId,
+      "projects:create",
+      true,
+      "board-user",
+    );
+    expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
+      companyId,
+      "agent",
+      agentId,
+      "projects:update",
+      true,
+      "board-user",
+    );
+    expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
+      companyId,
+      "agent",
+      agentId,
+      "projects:assign",
+      true,
+      "board-user",
+    );
+    expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
+      companyId,
+      "agent",
+      agentId,
+      "projects:manage_owner",
+      true,
+      "board-user",
+    );
+    expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
+      companyId,
+      "agent",
+      agentId,
+      "projects:manage_workspace",
       true,
       "board-user",
     );

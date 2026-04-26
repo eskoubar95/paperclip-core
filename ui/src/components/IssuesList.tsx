@@ -5,6 +5,7 @@ import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { executionWorkspacesApi } from "../api/execution-workspaces";
 import { issuesApi } from "../api/issues";
+import { teamsApi } from "../api/teams";
 import { authApi } from "../api/auth";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
@@ -68,7 +69,7 @@ const ISSUE_ROW_RENDER_BATCH_DELAY_MS = 0;
 export type IssueViewState = IssueFilterState & {
   sortField: "status" | "priority" | "title" | "created" | "updated";
   sortDir: "asc" | "desc";
-  groupBy: "status" | "priority" | "assignee" | "workspace" | "parent" | "none";
+  groupBy: "status" | "priority" | "assignee" | "workspace" | "parent" | "team" | "none";
   viewMode: "list" | "board";
   nestingEnabled: boolean;
   collapsedGroups: string[];
@@ -557,6 +558,23 @@ export function IssuesList({
     queryFn: () => issuesApi.listLabels(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const { data: teamsForFilters = [] } = useQuery({
+    queryKey: selectedCompanyId ? queryKeys.teams.list(selectedCompanyId) : ["teams", "off"],
+    queryFn: () => teamsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const teamNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const team of teamsForFilters) {
+      map.set(team.id, team.name);
+    }
+    for (const issue of issues) {
+      if (issue.teamId && issue.team?.name) {
+        map.set(issue.teamId, issue.team.name);
+      }
+    }
+    return map;
+  }, [teamsForFilters, issues]);
 
   const activeFilterCount = countActiveIssueFilters(viewState, enableRoutineVisibilityFilter);
 
@@ -606,6 +624,23 @@ export function IssuesList({
           items: groups[key]!,
         }));
     }
+    if (viewState.groupBy === "team") {
+      const groups = groupBy(filtered, (i) => i.teamId ?? "__no_team");
+      return Object.keys(groups)
+        .sort((a, b) => {
+          if (a === "__no_team") return 1;
+          if (b === "__no_team") return -1;
+          return (groups[b]?.length ?? 0) - (groups[a]?.length ?? 0);
+        })
+        .map((key) => ({
+          key,
+          label:
+            key === "__no_team"
+              ? "No team"
+              : (groups[key]![0]?.team?.name ?? teamNameById.get(key) ?? key.slice(0, 8)),
+          items: groups[key]!,
+        }));
+    }
     // assignee
     const groups = groupBy(
       filtered,
@@ -621,7 +656,7 @@ export function IssuesList({
             : (agentName(key) ?? key.slice(0, 8)),
       items: groups[key]!,
     }));
-  }, [filtered, viewState.groupBy, agents, agentName, currentUserId, workspaceNameMap, issueTitleMap, companyUserLabelMap]);
+  }, [filtered, viewState.groupBy, agents, agentName, currentUserId, workspaceNameMap, issueTitleMap, companyUserLabelMap, teamNameById]);
 
   useEffect(() => {
     if (viewState.viewMode !== "list") return;
@@ -657,6 +692,9 @@ export function IssuesList({
         const parentIssue = issueById.get(groupKey);
         if (parentIssue) Object.assign(defaults, buildSubIssueDefaultsForViewer(parentIssue, currentUserId));
         else defaults.parentId = groupKey;
+      }
+      else if (viewState.groupBy === "team" && groupKey !== "__no_team") {
+        defaults.teamId = groupKey;
       }
     }
     return defaults;
@@ -760,6 +798,7 @@ export function IssuesList({
             agents={agents}
             creators={creatorOptions}
             projects={projects?.map((project) => ({ id: project.id, name: project.name }))}
+            teams={teamsForFilters.map((t) => ({ id: t.id, name: t.name }))}
             labels={labels?.map((label) => ({ id: label.id, name: label.name, color: label.color }))}
             currentUserId={currentUserId}
             enableRoutineVisibilityFilter={enableRoutineVisibilityFilter}
@@ -824,6 +863,7 @@ export function IssuesList({
                     ["status", "Status"],
                     ["priority", "Priority"],
                     ["assignee", "Assignee"],
+                    ["team", "Team"],
                     ["workspace", "Workspace"],
                     ["parent", "Parent Issue"],
                     ["none", "None"],

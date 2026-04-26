@@ -17,12 +17,16 @@ import { companies } from "./companies.js";
 import { heartbeatRuns } from "./heartbeat_runs.js";
 import { projectWorkspaces } from "./project_workspaces.js";
 import { executionWorkspaces } from "./execution_workspaces.js";
+import { teams } from "./teams.js";
 
 export const issues = pgTable(
   "issues",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id),
+    teamId: uuid("team_id").references(() => teams.id, { onDelete: "set null" }),
+    /** Workstream / queue within a team (e.g. backend, frontend) — not agent org role. */
+    workstreamRole: text("workstream_role"),
     projectId: uuid("project_id").references(() => projects.id),
     projectWorkspaceId: uuid("project_workspace_id").references(() => projectWorkspaces.id, { onDelete: "set null" }),
     goalId: uuid("goal_id").references(() => goals.id),
@@ -62,6 +66,16 @@ export const issues = pgTable(
   },
   (table) => ({
     companyStatusIdx: index("issues_company_status_idx").on(table.companyId, table.status),
+    companyTeamStatusIdx: index("issues_company_team_status_idx").on(
+      table.companyId,
+      table.teamId,
+      table.status,
+    ),
+    companyWorkstreamStatusIdx: index("issues_company_workstream_status_idx").on(
+      table.companyId,
+      table.workstreamRole,
+      table.status,
+    ),
     assigneeStatusIdx: index("issues_company_assignee_status_idx").on(
       table.companyId,
       table.assigneeAgentId,

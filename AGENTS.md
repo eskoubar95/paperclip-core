@@ -30,6 +30,7 @@ Before making changes, read in this order:
 - `packages/adapter-utils/`: shared adapter utilities
 - `packages/plugins/`: plugin system packages
 - `doc/`: operational and product docs
+- `docs/`: additional technical notes (e.g. project governance handoff: `docs/AGENT_HANDOFF_PROJECT_GOVERNANCE_V1.md`)
 
 ## 4. Dev Setup (Auto DB)
 

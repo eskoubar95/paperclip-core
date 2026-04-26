@@ -48,6 +48,14 @@ vi.mock("../api/auth", () => ({
   authApi: mockAuthApi,
 }));
 
+const mockTeamsApi = vi.hoisted(() => ({
+  list: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("../api/teams", () => ({
+  teamsApi: mockTeamsApi,
+}));
+
 vi.mock("../hooks/useProjectOrder", () => ({
   useProjectOrder: ({ projects }: { projects: unknown[] }) => ({
     orderedProjects: projects,
@@ -142,6 +150,8 @@ function createIssue(overrides: Partial<Issue> = {}): Issue {
     createdAt: new Date("2026-04-06T12:00:00.000Z"),
     updatedAt: new Date("2026-04-06T12:05:00.000Z"),
     ...overrides,
+    teamId: overrides.teamId ?? null,
+    workstreamRole: overrides.workstreamRole ?? null,
   };
 }
 

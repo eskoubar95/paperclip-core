@@ -4,6 +4,12 @@ import path from "node:path";
 import { ensurePostgresDatabase, getPostgresDataDirectory } from "./client.js";
 import { createEmbeddedPostgresLogBuffer, formatEmbeddedPostgresError } from "./embedded-postgres-error.js";
 import { resolveDatabaseTarget } from "./runtime-config.js";
+import {
+  isWindowsSharedMemoryStuckState,
+  sleepMs,
+  stompWindowsPostgresProcesses,
+  waitForLocalPortAcceptingConnections,
+} from "./windows-embedded-pg-recover.js";
 
 type EmbeddedPostgresInstance = {
   initialise(): Promise<void>;
@@ -134,7 +140,7 @@ async function ensureEmbeddedPostgresConnection(
     };
   }
 
-  const instance = new EmbeddedPostgres({
+  const embeddedOpts = {
     databaseDir: dataDir,
     user: "paperclip",
     password: "paperclip",
@@ -143,7 +149,9 @@ async function ensureEmbeddedPostgresConnection(
     initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
     onLog: logBuffer.append,
     onError: logBuffer.append,
-  });
+  };
+
+  let instance: EmbeddedPostgresInstance = new EmbeddedPostgres(embeddedOpts);
 
   if (!existsSync(path.resolve(dataDir, "PG_VERSION"))) {
     try {
@@ -156,17 +164,52 @@ async function ensureEmbeddedPostgresConnection(
       });
     }
   }
-  if (existsSync(postmasterPidFile)) {
-    rmSync(postmasterPidFile, { force: true });
+
+  let started = false;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (existsSync(postmasterPidFile)) {
+      rmSync(postmasterPidFile, { force: true });
+    }
+    try {
+      await instance.start();
+      started = true;
+      break;
+    } catch (error) {
+      const recent = logBuffer.getRecentLogs();
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const canRecover =
+        attempt === 0 && isWindowsSharedMemoryStuckState(errMsg, recent) && process.env.PAPERCLIP_WINDOWS_EMBEDDED_PG_STOMP !== "0";
+
+      if (!canRecover) {
+        throw formatEmbeddedPostgresError(error, {
+          fallbackMessage: `Failed to start embedded PostgreSQL on port ${selectedPort}`,
+          recentLogs: recent,
+        });
+      }
+
+      console.error(
+        "[paperclip] embedded PostgreSQL start failed (Windows shared memory); retrying after stopping orphan postgres processes…",
+      );
+      // Skip instance.stop() — if start() threw, the embedded-postgres library may call process.exit(0)
+      // when stopping a failed instance, terminating our script before we can retry or report the error.
+      await stompWindowsPostgresProcesses();
+      await sleepMs(2000);
+      if (existsSync(postmasterPidFile)) {
+        rmSync(postmasterPidFile, { force: true });
+      }
+      instance = new EmbeddedPostgres(embeddedOpts);
+    }
   }
-  try {
-    await instance.start();
-  } catch (error) {
-    throw formatEmbeddedPostgresError(error, {
+
+  if (!started) {
+    throw formatEmbeddedPostgresError(new Error("Failed to start embedded PostgreSQL after recovery attempt"), {
       fallbackMessage: `Failed to start embedded PostgreSQL on port ${selectedPort}`,
       recentLogs: logBuffer.getRecentLogs(),
     });
   }
+
+  // Embedded postmaster may not accept TCP until shortly after `start()`.
+  await waitForLocalPortAcceptingConnections("127.0.0.1", selectedPort, 60_000, 200);
 
   const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${selectedPort}/postgres`;
   await ensurePostgresDatabase(adminConnectionString, "paperclip");

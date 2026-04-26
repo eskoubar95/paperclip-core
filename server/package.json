@@ -35,12 +35,14 @@
     "dev": "tsx src/index.ts",
     "dev:watch": "cross-env PAPERCLIP_MIGRATION_PROMPT=never PAPERCLIP_MIGRATION_AUTO_APPLY=true tsx ./scripts/dev-watch.ts",
     "prepare:ui-dist": "bash ../scripts/prepare-server-ui-dist.sh",
-    "build": "tsc && mkdir -p dist/onboarding-assets && cp -R src/onboarding-assets/. dist/onboarding-assets/",
+    "build": "tsc && node scripts/copy-onboarding-assets.mjs",
     "prepack": "pnpm run prepare:ui-dist",
     "postpack": "rm -rf ui-dist",
     "clean": "rm -rf dist",
     "start": "node dist/index.js",
-    "typecheck": "pnpm --filter @paperclipai/plugin-sdk build && tsc --noEmit"
+    "typecheck": "pnpm --filter @paperclipai/plugin-sdk build && tsc --noEmit",
+    "test": "vitest run",
+    "test:smoke": "vitest run src/__tests__/access-can-user-implicit.test.ts src/__tests__/agent-permissions-routes.test.ts src/__tests__/project-orchestration-service.test.ts src/__tests__/project-routes-env.test.ts src/__tests__/project-goal-telemetry-routes.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.888.0",

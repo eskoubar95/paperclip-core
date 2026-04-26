@@ -60,6 +60,10 @@ export interface AgentHireResponse {
 export interface AgentPermissionUpdate {
   canCreateAgents: boolean;
   canAssignTasks: boolean;
+  canCreateProjects?: boolean;
+  canAssignProjects?: boolean;
+  canManageProjectOwners?: boolean;
+  canManageProjectWorkspaces?: boolean;
 }
 
 function withCompanyScope(path: string, companyId?: string) {

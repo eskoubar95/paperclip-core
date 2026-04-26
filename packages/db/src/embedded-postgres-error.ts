@@ -24,6 +24,20 @@ function summarizeRecentLogs(recentLogs: string[]): string | null {
 
 function detectEmbeddedPostgresHint(recentLogs: string[]): string | null {
   const haystack = recentLogs.join("\n").toLowerCase();
+  if (haystack.includes("pre-existing shared memory") || haystack.includes("shared memory block is still in use")) {
+    if (process.platform === "win32") {
+      return (
+        "A previous local PostgreSQL (often Paperclip's embedded instance) may still be holding shared memory. " +
+        "If you also run other PostgreSQL servers on this PC, set PAPERCLIP_WINDOWS_EMBEDDED_PG_STOMP=0 and " +
+        "use DATABASE_URL or stop those services manually. Otherwise restart Windows or run: " +
+        "Get-Process postgres -ErrorAction SilentlyContinue | Stop-Process -Force"
+      );
+    }
+    return (
+      "Embedded PostgreSQL could not attach shared memory (another instance may still be running). " +
+      "Stop other local PostgreSQL servers, then retry."
+    );
+  }
   if (!haystack.includes("could not create shared memory segment")) {
     return null;
   }

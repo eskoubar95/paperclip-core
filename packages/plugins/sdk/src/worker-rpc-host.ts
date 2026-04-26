@@ -573,6 +573,8 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           return callHost("issues.list", {
             companyId: input.companyId,
             projectId: input.projectId,
+            teamId: input.teamId,
+            workstreamRole: input.workstreamRole,
             assigneeAgentId: input.assigneeAgentId,
             status: input.status,
             limit: input.limit,
@@ -591,6 +593,8 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
             goalId: input.goalId,
             parentId: input.parentId,
             inheritExecutionWorkspaceFromIssueId: input.inheritExecutionWorkspaceFromIssueId,
+            teamId: input.teamId,
+            workstreamRole: input.workstreamRole,
             title: input.title,
             description: input.description,
             priority: input.priority,

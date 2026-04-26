@@ -69,6 +69,10 @@ const agentInstructionsSvc = {
   materializeManagedBundle: vi.fn(),
 };
 
+const teamSvc = {
+  list: vi.fn(),
+};
+
 vi.mock("../services/companies.js", () => ({
   companyService: () => companySvc,
 }));
@@ -107,6 +111,10 @@ vi.mock("../services/secrets.js", () => ({
 
 vi.mock("../services/agent-instructions.js", () => ({
   agentInstructionsService: () => agentInstructionsSvc,
+}));
+
+vi.mock("../services/teams.js", () => ({
+  teamService: () => teamSvc,
 }));
 
 vi.mock("../routes/org-chart-svg.js", () => ({
@@ -388,6 +396,7 @@ describe("company portability", () => {
         instructionsFilePath: `/tmp/${agent.id}/AGENTS.md`,
       },
     }));
+    teamSvc.list.mockResolvedValue([]);
   });
 
   it("parses canonical GitHub import URLs with explicit ref and package path", () => {

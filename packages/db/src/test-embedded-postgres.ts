@@ -38,6 +38,23 @@ async function getEmbeddedPostgresCtor(): Promise<EmbeddedPostgresCtor> {
   return mod.default as EmbeddedPostgresCtor;
 }
 
+async function rmDataDirWithRetry(dataDir: string): Promise<void> {
+  const attempts = 8;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      const code = err && typeof err === "object" && "code" in err ? String((err as NodeJS.ErrnoException).code) : "";
+      if ((code === "EBUSY" || code === "EPERM" || code === "ENOTEMPTY") && i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, 50 * (i + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 async function getAvailablePort(): Promise<number> {
   return await new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -131,12 +148,12 @@ export async function startEmbeddedPostgresTestDatabase(
       connectionString,
       cleanup: async () => {
         await instance.stop().catch(() => {});
-        fs.rmSync(dataDir, { recursive: true, force: true });
+        await rmDataDirWithRetry(dataDir);
       },
     };
   } catch (error) {
     await instance.stop().catch(() => {});
-    fs.rmSync(dataDir, { recursive: true, force: true });
+    await rmDataDirWithRetry(dataDir);
     throw new Error(
       `Failed to start embedded PostgreSQL test database: ${formatEmbeddedPostgresError(error)}`,
     );

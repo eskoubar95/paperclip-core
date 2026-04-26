@@ -396,7 +396,7 @@ pnpm dev
 
 ## Optional: Use External Postgres
 
-If you set `DATABASE_URL`, the server will use that instead of embedded PostgreSQL.
+If you set `DATABASE_URL`, the server will use that instead of embedded PostgreSQL. Put it in the instance env file, e.g. `~/.paperclip/instances/default/.env` (Windows: `%USERPROFILE%\.paperclip\instances\default\.env`) — see `local-postgres.env.example` in the repo root. For a **Railway** Postgres connection string and CLI steps, see `doc/DATABASE.md` (section **Railway**).
 
 ## Automatic DB Backups
 

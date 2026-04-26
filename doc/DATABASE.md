@@ -119,6 +119,30 @@ DATABASE_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@...5432/postgres \
 
 See [Supabase pricing](https://supabase.com/pricing) for current details.
 
+## 4. Railway (CLI / dashboard)
+
+Use this when local **embedded** PostgreSQL is slow or stuck (e.g. migrations / tests) but you already have PostgreSQL on [Railway](https://railway.com/). Point Paperclip at Railway’s public connection string instead of starting embedded Postgres locally.
+
+**Install the CLI** (if `railway` is not on `PATH`): `npm i -g @railway/cli`, or use [Railway’s official CLI install](https://docs.railway.com/develop/cli).
+
+1. `railway login`
+2. From a project directory: `railway link` (pick project and environment)
+3. **Get `DATABASE_URL`:**
+   - **CLI:** `railway variable list --kv` — add `-s <postgres-service-name>` if you have multiple services. (Aliases: `railway variables`, `railway vars`.)
+   - **Injected env:** `railway run -- printenv DATABASE_URL` (works when that variable is defined for the run, e.g. Postgres plugin on the target service).
+   - **Dashboard:** Project → your **Postgres** service (or the service that owns `DATABASE_URL`) → **Variables** — copy the value (`postgres://` or `postgresql://`).
+
+4. Set it in the **user instance** env file (same pattern as `local-postgres.env.example` at the repo root):
+
+   - Windows: `%USERPROFILE%\.paperclip\instances\default\.env`
+   - Unix: `~/.paperclip/instances/default/.env`
+
+   ```sh
+   DATABASE_URL=postgres://USER:PASSWORD@HOST:PORT/DATABASE
+   ```
+
+**Sealed** variables are not shown via the CLI; use the dashboard or Railway’s docs for that case.
+
 ## Switching between modes
 
 The database mode is controlled by `DATABASE_URL`:
@@ -128,6 +152,7 @@ The database mode is controlled by `DATABASE_URL`:
 | Not set | Embedded PostgreSQL (`~/.paperclip/instances/default/db/`) |
 | `postgres://...localhost...` | Local Docker PostgreSQL |
 | `postgres://...supabase.com...` | Hosted Supabase |
+| `postgres://` / `postgresql://` (fx Railway) | External hosted Postgres (ingen embedded instans) |
 
 Your Drizzle schema (`packages/db/src/schema/`) stays the same regardless of mode.
 

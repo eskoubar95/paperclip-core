@@ -7,6 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Bot, Filter, HardDrive, Search, User, X } from "lucide-react";
 import { PriorityIcon } from "./PriorityIcon";
 import { StatusIcon } from "./StatusIcon";
+import { ISSUE_WORKSTREAM_ROLES } from "@paperclipai/shared";
 import {
   defaultIssueFilterState,
   issueFilterArraysEqual,
@@ -40,6 +41,11 @@ type WorkspaceOption = {
   name: string;
 };
 
+type TeamFilterOption = {
+  id: string;
+  name: string;
+};
+
 type CreatorOption = {
   id: string;
   label: string;
@@ -59,6 +65,7 @@ export function IssueFiltersPopover({
   buttonVariant = "ghost",
   iconOnly = false,
   workspaces,
+  teams,
   creators,
 }: {
   state: IssueFilterState;
@@ -72,6 +79,7 @@ export function IssueFiltersPopover({
   buttonVariant?: "ghost" | "outline";
   iconOnly?: boolean;
   workspaces?: WorkspaceOption[];
+  teams?: TeamFilterOption[];
   creators?: CreatorOption[];
 }) {
   const [creatorSearch, setCreatorSearch] = useState("");
@@ -305,6 +313,38 @@ export function IssueFiltersPopover({
                   </div>
                 </div>
               ) : null}
+
+              {teams && teams.length > 0 ? (
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Team</span>
+                  <div className="max-h-32 space-y-0.5 overflow-y-auto">
+                    {teams.map((team) => (
+                      <label key={team.id} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
+                        <Checkbox
+                          checked={state.teams.includes(team.id)}
+                          onCheckedChange={() => onChange({ teams: toggleIssueFilterValue(state.teams, team.id) })}
+                        />
+                        <span className="text-sm">{team.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="space-y-1">
+                <span className="text-xs text-muted-foreground">Workstream role</span>
+                <div className="max-h-32 space-y-0.5 overflow-y-auto">
+                  {ISSUE_WORKSTREAM_ROLES.map((role) => (
+                    <label key={role} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
+                      <Checkbox
+                        checked={state.workstreams.includes(role)}
+                        onCheckedChange={() => onChange({ workstreams: toggleIssueFilterValue(state.workstreams, role) })}
+                      />
+                      <span className="text-sm">{issueFilterLabel(role)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div className="min-w-0 space-y-3">

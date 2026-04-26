@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS, PERMISSION_KEYS, type PermissionKey } from "@paperclipai/shared";
+import {
+  HUMAN_COMPANY_MEMBERSHIP_IMPLICIT_PERMISSIONS,
+  HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS,
+  PERMISSION_KEYS,
+  type PermissionKey,
+} from "@paperclipai/shared";
 import { ShieldCheck, Users } from "lucide-react";
 import { accessApi, type CompanyMember } from "@/api/access";
 import { ApiError } from "@/api/client";
@@ -27,6 +32,11 @@ const permissionLabels: Record<PermissionKey, string> = {
   "tasks:assign": "Assign tasks",
   "tasks:assign_scope": "Assign scoped tasks",
   "joins:approve": "Approve join requests",
+  "projects:create": "Create projects",
+  "projects:update": "Update and delete projects",
+  "projects:assign": "Assign issues to projects",
+  "projects:manage_owner": "Manage project owners (lead agent)",
+  "projects:manage_workspace": "Manage project workspaces (repo / branch)",
 };
 
 function formatGrantSummary(member: CompanyMember) {
@@ -34,15 +44,9 @@ function formatGrantSummary(member: CompanyMember) {
   return member.grants.map((grant) => permissionLabels[grant.permissionKey]).join(", ");
 }
 
-const implicitRoleGrantMap: Record<NonNullable<CompanyMember["membershipRole"]>, PermissionKey[]> = {
-  owner: ["agents:create", "users:invite", "users:manage_permissions", "tasks:assign", "joins:approve"],
-  admin: ["agents:create", "users:invite", "tasks:assign", "joins:approve"],
-  operator: ["tasks:assign"],
-  viewer: [],
-};
-
 function getImplicitGrantKeys(role: CompanyMember["membershipRole"]) {
-  return role ? implicitRoleGrantMap[role] : [];
+  if (!role) return [];
+  return [...HUMAN_COMPANY_MEMBERSHIP_IMPLICIT_PERMISSIONS[role]];
 }
 
 export function CompanyAccess() {

@@ -24,6 +24,11 @@ seed-*.mjs
 server/check-*.mjs
 server/seed-*.mjs
 packages/db/seed-*.mjs
+# Local migration / embedded-pg debug noise (never commit)
+packages/db/err.log
+packages/db/mig.err
+packages/db/mig.out
+packages/db/out.json
 
 # npm publish build artifacts
 cli/package.dev.json

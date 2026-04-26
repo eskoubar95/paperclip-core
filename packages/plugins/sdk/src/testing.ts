@@ -337,6 +337,10 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         let out = [...issues.values()];
         out = out.filter((issue) => issue.companyId === companyId);
         if (input?.projectId) out = out.filter((issue) => issue.projectId === input.projectId);
+        if (input?.teamId) out = out.filter((issue) => issue.teamId === input.teamId);
+        if (input?.workstreamRole) {
+          out = out.filter((issue) => issue.workstreamRole === input.workstreamRole);
+        }
         if (input?.assigneeAgentId) out = out.filter((issue) => issue.assigneeAgentId === input.assigneeAgentId);
         if (input?.status) out = out.filter((issue) => issue.status === input.status);
         if (input?.offset) out = out.slice(input.offset);
@@ -354,6 +358,8 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         const record: Issue = {
           id: randomUUID(),
           companyId: input.companyId,
+          teamId: input.teamId ?? null,
+          workstreamRole: (input.workstreamRole as Issue["workstreamRole"]) ?? null,
           projectId: input.projectId ?? null,
           projectWorkspaceId: null,
           goalId: input.goalId ?? null,

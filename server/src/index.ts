@@ -22,6 +22,10 @@ import {
   companies,
   companyMemberships,
   instanceUserRoles,
+  isWindowsSharedMemoryStuckState,
+  stompWindowsPostgresProcesses,
+  sleepMs,
+  waitForLocalPortAcceptingConnections,
 } from "@paperclipai/db";
 import detectPort from "detect-port";
 import { createApp } from "./app.js";
@@ -397,15 +401,64 @@ export async function startServer(): Promise<StartedServer> {
           logger.warn("Removing stale embedded PostgreSQL lock file");
           rmSync(postmasterPidFile, { force: true });
         }
-        try {
-          await embeddedPostgres.start();
-        } catch (err) {
+
+        // Retry loop for Windows shared memory issues
+        let started = false;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          if (attempt > 0 && existsSync(postmasterPidFile)) {
+            rmSync(postmasterPidFile, { force: true });
+          }
+          try {
+            await embeddedPostgres.start();
+            started = true;
+            break;
+          } catch (err) {
+            const recent = logBuffer.getRecentLogs();
+            const errMsg = err instanceof Error ? err.message : String(err);
+            const canRecover =
+              attempt === 0 &&
+              isWindowsSharedMemoryStuckState(errMsg, recent) &&
+              process.env.PAPERCLIP_WINDOWS_EMBEDDED_PG_STOMP !== "0";
+
+            if (!canRecover) {
+              logEmbeddedPostgresFailure("start", err);
+              throw formatEmbeddedPostgresError(err, {
+                fallbackMessage: `Failed to start embedded PostgreSQL on port ${port}`,
+                recentLogs: recent,
+              });
+            }
+
+            logger.error(
+              "[paperclip] embedded PostgreSQL start failed (Windows shared memory); retrying after stopping orphan postgres processes…",
+            );
+            // Skip embeddedPostgres.stop() — the library may call process.exit(0) when stopping a failed instance
+            await stompWindowsPostgresProcesses();
+            await sleepMs(2000);
+            embeddedPostgres = new EmbeddedPostgres({
+              databaseDir: dataDir,
+              user: "paperclip",
+              password: "paperclip",
+              port,
+              persistent: true,
+              initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
+              onLog: appendEmbeddedPostgresLog,
+              onError: appendEmbeddedPostgresLog,
+            });
+          }
+        }
+
+        if (!started) {
+          const err = new Error("Failed to start embedded PostgreSQL after recovery attempt");
           logEmbeddedPostgresFailure("start", err);
           throw formatEmbeddedPostgresError(err, {
             fallbackMessage: `Failed to start embedded PostgreSQL on port ${port}`,
             recentLogs: logBuffer.getRecentLogs(),
           });
         }
+
+        // Ensure TCP port is ready before continuing
+        await waitForLocalPortAcceptingConnections("127.0.0.1", port, 60_000, 200);
+
         embeddedPostgresStartedByThisProcess = true;
       }
     }

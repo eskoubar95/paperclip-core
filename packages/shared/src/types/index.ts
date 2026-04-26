@@ -45,6 +45,7 @@ export type {
 export type {
   Agent,
   AgentAccessState,
+  AgentPermissionSource,
   AgentChainOfCommandEntry,
   AgentDetail,
   AgentPermissions,
@@ -122,6 +123,19 @@ export type {
   IssueAttachment,
   IssueLabel,
 } from "./issue.js";
+export type {
+  Team,
+  TeamSummary,
+  TeamMembership,
+  TeamMembershipWithPrincipal,
+  TeamLeadRefs,
+  IssueTemplate,
+  CompanyIssueWebhook,
+  BatchKickoffRequest,
+  BatchKickoffResult,
+  IssueOrchestrationSummary,
+  IssueOrchestrationSummaryRow,
+} from "./team.js";
 export type { Goal } from "./goal.js";
 export type { Approval, ApprovalComment } from "./approval.js";
 export type {

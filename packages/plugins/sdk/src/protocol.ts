@@ -568,6 +568,8 @@ export interface WorkerToHostMethods {
     params: {
       companyId: string;
       projectId?: string;
+      teamId?: string;
+      workstreamRole?: string;
       assigneeAgentId?: string;
       status?: string;
       limit?: number;
@@ -586,6 +588,8 @@ export interface WorkerToHostMethods {
       goalId?: string;
       parentId?: string;
       inheritExecutionWorkspaceFromIssueId?: string;
+      teamId?: string;
+      workstreamRole?: string;
       title: string;
       description?: string;
       priority?: string;

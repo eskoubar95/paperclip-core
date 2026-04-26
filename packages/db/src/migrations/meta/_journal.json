@@ -428,6 +428,13 @@
       "when": 1776560000000,
       "tag": "0060_company_github_integrations",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1776600000000,
+      "tag": "0061_first_class_teams",
+      "breakpoints": true
     }
   ]
 }

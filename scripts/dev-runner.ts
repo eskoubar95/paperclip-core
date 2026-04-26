@@ -195,7 +195,12 @@ if (existingRunner) {
   process.exit(0);
 }
 
-const pnpmBin = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+function resolvePnpmSpawn(): { command: string; argvPrefix: string[] } {
+  // Prefer Corepack so `pnpm dev` works when `pnpm`/`pnpm.cmd` is not on PATH (common on Windows).
+  return process.platform === "win32"
+    ? { command: "corepack.cmd", argvPrefix: ["pnpm"] }
+    : { command: "corepack", argvPrefix: ["pnpm"] };
+}
 let previousSnapshot = collectWatchedSnapshot();
 let dirtyPaths = new Set<string>();
 let pendingMigrations: string[] = [];
@@ -379,11 +384,14 @@ async function runPnpm(args: string[], options: {
   cwd?: string;
 } = {}) {
   return await new Promise<{ code: number; signal: NodeJS.Signals | null; stdout: string; stderr: string }>((resolve, reject) => {
-    const spawned = spawn(pnpmBin, args, {
+    const { command, argvPrefix } = resolvePnpmSpawn();
+    // Windows: spawning `.cmd` shims without a shell often yields EINVAL; a shell finds Corepack reliably.
+    const useShell = process.platform === "win32";
+    const spawned = spawn(command, [...argvPrefix, ...args], {
       stdio: options.stdio ?? ["ignore", "pipe", "pipe"],
       env: options.env ?? process.env,
       cwd: options.cwd,
-      shell: process.platform === "win32",
+      shell: useShell,
     });
 
     const stdoutBuffer = createCapturedOutputBuffer();
@@ -401,7 +409,9 @@ async function runPnpm(args: string[], options: {
     }
 
     spawned.on("error", reject);
-    spawned.on("exit", (code, signal) => {
+    // Use "close" (not "exit") so stdout/stderr are fully drained before we read buffers; on Windows
+    // "exit" can fire before the last chunks from migration-status --json.
+    spawned.on("close", (code, signal) => {
       const stdout = stdoutBuffer.finish();
       const stderr = stderrBuffer.finish();
       resolve({
@@ -414,27 +424,114 @@ async function runPnpm(args: string[], options: {
   });
 }
 
+/**
+ * Run migration-status with the repo's tsx (no pnpm exec). On Windows, pnpm's child stdio
+ * can yield empty stdout for short-lived JSON even when the script prints (exit 0).
+ */
+function runMigrationStatusJsonChild(): Promise<{
+  code: number;
+  signal: NodeJS.Signals | null;
+  stdout: string;
+  stderr: string;
+}> {
+  const tsxCli = path.join(repoRoot, "server", "node_modules", "tsx", "dist", "cli.mjs");
+  const statusScript = path.join(repoRoot, "packages", "db", "src", "migration-status.ts");
+  if (!existsSync(tsxCli) || !existsSync(statusScript)) {
+    return Promise.resolve({
+      code: 1,
+      signal: null,
+      stdout: "",
+      stderr: `[paperclip] Missing ${tsxCli} or ${statusScript}. Run: pnpm install (from ${repoRoot})\n`,
+    });
+  }
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [tsxCli, statusScript], {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...env, PAPERCLIP_MIGRATION_STATUS_JSON: "1" },
+      cwd: repoRoot,
+      windowsHide: true,
+    });
+    const stdoutBuffer = createCapturedOutputBuffer();
+    const stderrBuffer = createCapturedOutputBuffer();
+    if (child.stdout) {
+      child.stdout.on("data", (chunk) => {
+        stdoutBuffer.append(chunk);
+      });
+    }
+    if (child.stderr) {
+      child.stderr.on("data", (chunk) => {
+        stderrBuffer.append(chunk);
+      });
+    }
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      const stdout = stdoutBuffer.finish();
+      const stderr = stderrBuffer.finish();
+      resolve({
+        code: code ?? 0,
+        signal,
+        stdout: stdout.text,
+        stderr: stderr.text,
+      });
+    });
+  });
+}
+
+function parseMigrationStatusJsonPayload(raw: string): { status?: string; pendingMigrations?: string[] } {
+  const text = raw.trim();
+  if (text.length === 0) {
+    throw new Error("migration-status JSON output produced empty stdout");
+  }
+  try {
+    return JSON.parse(text) as { status?: string; pendingMigrations?: string[] };
+  } catch {
+    // pnpm/tsx may prefix lines (or emit warnings) before the JSON line; take the last parseable object line.
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      const line = lines[i] ?? "";
+      if (!line.startsWith("{")) continue;
+      try {
+        return JSON.parse(line) as { status?: string; pendingMigrations?: string[] };
+      } catch {
+        // continue
+      }
+    }
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      return JSON.parse(text.slice(start, end + 1)) as { status?: string; pendingMigrations?: string[] };
+    }
+    throw new Error("no JSON object found in migration-status stdout");
+  }
+}
+
 async function getMigrationStatusPayload() {
-  const status = await runPnpm(
-    ["--filter", "@paperclipai/db", "exec", "tsx", "src/migration-status.ts", "--json"],
-    { env },
-  );
+  const status = await runMigrationStatusJsonChild();
   if (status.code !== 0) {
     process.stderr.write(
       status.stderr ||
         status.stdout ||
-        `[paperclip] Command failed with code ${status.code}: pnpm --filter @paperclipai/db exec tsx src/migration-status.ts --json\n`,
+        `[paperclip] Command failed with code ${status.code}: pnpm --filter @paperclipai/db exec tsx src/migration-status.ts\n`,
     );
     process.exit(status.code);
   }
 
+  if (!status.stdout.trim().length) {
+    throw toError(
+      new Error(
+        `migration-status produced empty stdout (exit ${status.code}). stderr (first 4k):\n${
+          (status.stderr || "").slice(0, 4096) || "<empty>"
+        }`,
+      ),
+      "Unable to parse migration-status JSON output",
+    );
+  }
+
   try {
-    return JSON.parse(status.stdout.trim()) as { status?: string; pendingMigrations?: string[] };
+    return parseMigrationStatusJsonPayload(status.stdout);
   } catch (error) {
     process.stderr.write(
-      status.stderr ||
-        status.stdout ||
-        "[paperclip] migration-status returned invalid JSON payload\n",
+      `${status.stderr || ""}${status.stdout || ""}\n[paperclip] migration-status returned invalid JSON payload\n`,
     );
     throw toError(error, "Unable to parse migration-status JSON output");
   }
@@ -587,11 +684,12 @@ async function startServerChild() {
   await buildPluginSdk();
 
   const serverScript = mode === "watch" ? "dev:watch" : "dev";
-  child = spawn(
-    pnpmBin,
-    ["--filter", "@paperclipai/server", serverScript, ...forwardedArgs],
-    { stdio: "inherit", env, shell: process.platform === "win32" },
-  );
+  const { command, argvPrefix } = resolvePnpmSpawn();
+  child = spawn(command, [...argvPrefix, "--filter", "@paperclipai/server", serverScript, ...forwardedArgs], {
+    stdio: "inherit",
+    env,
+    shell: process.platform === "win32",
+  });
 
   childExitPromise = new Promise((resolve, reject) => {
     child?.on("error", reject);

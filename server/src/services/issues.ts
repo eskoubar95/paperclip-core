@@ -22,7 +22,7 @@ import {
   projectWorkspaces,
   projects,
 } from "@paperclipai/db";
-import type { IssueRelationIssueSummary } from "@paperclipai/shared";
+import type { IssueOrchestrationSummary, IssueRelationIssueSummary } from "@paperclipai/shared";
 import { extractAgentMentionIds, extractProjectMentionIds, isUuidLike } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import {
@@ -32,6 +32,7 @@ import {
   parseProjectExecutionWorkspacePolicy,
 } from "./execution-workspace-policy.js";
 import { instanceSettingsService } from "./instance-settings.js";
+import { teamService } from "./teams.js";
 import { redactCurrentUserText } from "../log-redaction.js";
 import { resolveIssueGoalId, resolveNextIssueGoalId } from "./issue-goal-fallback.js";
 import { getDefaultCompanyGoal } from "./goals.js";
@@ -73,6 +74,8 @@ export interface IssueFilters {
   inboxArchivedByUserId?: string;
   unreadForUserId?: string;
   projectId?: string;
+  teamId?: string;
+  workstreamRole?: string;
   executionWorkspaceId?: string;
   parentId?: string;
   labelId?: string;
@@ -478,6 +481,22 @@ async function labelMapForIssues(dbOrTx: any, issueIds: string[]): Promise<Map<s
   return map;
 }
 
+async function attachTeamContextToIssues<T extends IssueWithLabels>(dbOrTx: any, companyId: string, rows: T[]): Promise<Array<T & { team: import("@paperclipai/shared").TeamSummary | null; teamLead: import("@paperclipai/shared").TeamLeadRefs | null }>> {
+  if (rows.length === 0) return rows as Array<T & { team: import("@paperclipai/shared").TeamSummary | null; teamLead: import("@paperclipai/shared").TeamLeadRefs | null }>;
+  const teamsApi = teamService(dbOrTx as unknown as Db);
+  const teamIds = [...new Set(rows.map((r) => r.teamId).filter((id): id is string => id != null))];
+  const summaryMap = await teamsApi.getSummariesByIds(companyId, teamIds);
+  const leadMap = new Map<string, import("@paperclipai/shared").TeamLeadRefs>();
+  for (const tid of teamIds) {
+    leadMap.set(tid, await teamsApi.getTeamLeadRefs(companyId, tid));
+  }
+  return rows.map((row) => ({
+    ...row,
+    team: row.teamId ? summaryMap.get(row.teamId) ?? null : null,
+    teamLead: row.teamId ? leadMap.get(row.teamId) ?? null : null,
+  })) as Array<T & { team: import("@paperclipai/shared").TeamSummary | null; teamLead: import("@paperclipai/shared").TeamLeadRefs | null }>;
+}
+
 async function withIssueLabels(dbOrTx: any, rows: IssueRow[]): Promise<IssueWithLabels[]> {
   if (rows.length === 0) return [];
   const labelsByIssueId = await labelMapForIssues(dbOrTx, rows.map((row) => row.id));
@@ -531,6 +550,8 @@ async function activeRunMapForIssues(
 const issueListSelect = {
   id: issues.id,
   companyId: issues.companyId,
+  teamId: issues.teamId,
+  workstreamRole: issues.workstreamRole,
   projectId: issues.projectId,
   projectWorkspaceId: issues.projectWorkspaceId,
   goalId: issues.goalId,
@@ -594,7 +615,8 @@ export function issueService(db: Db) {
       .then((rows) => rows[0] ?? null);
     if (!row) return null;
     const [enriched] = await withIssueLabels(db, [row]);
-    return enriched;
+    const [withTeam] = await attachTeamContextToIssues(db, row.companyId, [enriched]);
+    return withTeam;
   }
 
   async function getIssueByIdentifier(identifier: string) {
@@ -605,7 +627,8 @@ export function issueService(db: Db) {
       .then((rows) => rows[0] ?? null);
     if (!row) return null;
     const [enriched] = await withIssueLabels(db, [row]);
-    return enriched;
+    const [withTeam] = await attachTeamContextToIssues(db, row.companyId, [enriched]);
+    return withTeam;
   }
 
   function redactIssueComment<T extends { body: string }>(comment: T, censorUsernameInLogs: boolean): T {
@@ -1008,6 +1031,8 @@ export function issueService(db: Db) {
         conditions.push(unreadForUserCondition(companyId, unreadForUserId));
       }
       if (filters?.projectId) conditions.push(eq(issues.projectId, filters.projectId));
+      if (filters?.teamId) conditions.push(eq(issues.teamId, filters.teamId));
+      if (filters?.workstreamRole) conditions.push(eq(issues.workstreamRole, filters.workstreamRole));
       if (filters?.executionWorkspaceId) {
         conditions.push(eq(issues.executionWorkspaceId, filters.executionWorkspaceId));
       }
@@ -1064,11 +1089,12 @@ export function issueService(db: Db) {
       const withLabels = await withIssueLabels(db, rows);
       const runMap = await activeRunMapForIssues(db, withLabels);
       const withRuns = withActiveRuns(withLabels, runMap);
-      if (withRuns.length === 0) {
-        return withRuns;
+      const withTeams = await attachTeamContextToIssues(db, companyId, withRuns);
+      if (withTeams.length === 0) {
+        return withTeams;
       }
 
-      const issueIds = withRuns.map((row) => row.id);
+      const issueIds = withTeams.map((row) => row.id);
       const [statsRows, readRows, lastActivityRows] = await Promise.all([
         contextUserId
           ? db
@@ -1169,7 +1195,7 @@ export function issueService(db: Db) {
       const lastActivityByIssueId = new Map(lastActivityRows.map((row) => [row.issueId, row]));
 
       if (!contextUserId) {
-        return withRuns.map((row) => {
+        return withTeams.map((row) => {
           const activity = lastActivityByIssueId.get(row.id);
           const lastActivityAt = latestIssueActivityAt(
             row.updatedAt,
@@ -1185,7 +1211,7 @@ export function issueService(db: Db) {
 
       const readByIssueId = new Map(readRows.map((row) => [row.issueId, row.myLastReadAt]));
 
-      return withRuns.map((row) => {
+      return withTeams.map((row) => {
         const activity = lastActivityByIssueId.get(row.id);
         const lastActivityAt = latestIssueActivityAt(
           row.updatedAt,
@@ -1450,6 +1476,9 @@ export function issueService(db: Db) {
         throw unprocessable("in_progress issues require an assignee");
       }
       return db.transaction(async (tx) => {
+        if (issueData.teamId) {
+          await teamService(tx as unknown as typeof db).assertTeamInCompany(companyId, issueData.teamId);
+        }
         const defaultCompanyGoal = await getDefaultCompanyGoal(tx, companyId);
         const projectGoalId = await getProjectDefaultGoalId(tx, companyId, issueData.projectId);
         let projectWorkspaceId = issueData.projectWorkspaceId ?? null;
@@ -1596,7 +1625,8 @@ export function issueService(db: Db) {
           );
         }
         const [enriched] = await withIssueLabels(tx, [issue]);
-        return enriched;
+        const [withTeam] = await attachTeamContextToIssues(tx, companyId, [enriched]);
+        return withTeam;
       });
     },
 
@@ -1695,6 +1725,9 @@ export function issueService(db: Db) {
       }
 
       const runUpdate = async (tx: any) => {
+        if (issueData.teamId !== undefined && issueData.teamId !== null) {
+          await teamService(tx as unknown as typeof db).assertTeamInCompany(existing.companyId, issueData.teamId);
+        }
         const defaultCompanyGoal = await getDefaultCompanyGoal(tx, existing.companyId);
         const [currentProjectGoalId, nextProjectGoalId] = await Promise.all([
           getProjectDefaultGoalId(tx, existing.companyId, existing.projectId),
@@ -1736,7 +1769,8 @@ export function issueService(db: Db) {
           );
         }
         const [enriched] = await withIssueLabels(tx, [updated]);
-        return enriched;
+        const [withTeam] = await attachTeamContextToIssues(tx, existing.companyId, [enriched]);
+        return withTeam;
       };
 
       return dbOrTx === db ? db.transaction(runUpdate) : runUpdate(dbOrTx);
@@ -2568,6 +2602,77 @@ export function issueService(db: Db) {
         project: a.projectId ? projectMap.get(a.projectId) ?? null : null,
         goal: a.goalId ? goalMap.get(a.goalId) ?? null : null,
       }));
+    },
+
+    getOrchestrationSummary: async (companyId: string, parentIssueId: string): Promise<IssueOrchestrationSummary> => {
+      const children = await db
+        .select({ id: issues.id, teamId: issues.teamId, status: issues.status })
+        .from(issues)
+        .where(and(eq(issues.companyId, companyId), eq(issues.parentId, parentIssueId)));
+      const teamsApi = teamService(db);
+      const teamIds = [...new Set(children.map((c) => c.teamId).filter((id): id is string => id != null))];
+      const teamNameMap = await teamsApi.getSummariesByIds(companyId, teamIds);
+      const byTeamMap = new Map<string | null, { byStatus: Record<string, number>; blocked: number; wip: number }>();
+      for (const c of children) {
+        const key = c.teamId;
+        if (!byTeamMap.has(key)) {
+          byTeamMap.set(key, { byStatus: {}, blocked: 0, wip: 0 });
+        }
+        const agg = byTeamMap.get(key)!;
+        agg.byStatus[c.status] = (agg.byStatus[c.status] ?? 0) + 1;
+        if (c.status === "blocked") agg.blocked += 1;
+        if (c.status === "in_progress") agg.wip += 1;
+      }
+      let crossTeamBlockerCount = 0;
+      if (children.length > 0) {
+        const childIds = children.map((c) => c.id);
+        const rels = await db
+          .select({
+            blockedChildId: issueRelations.relatedIssueId,
+            blockerId: issueRelations.issueId,
+          })
+          .from(issueRelations)
+          .where(
+            and(
+              eq(issueRelations.companyId, companyId),
+              eq(issueRelations.type, "blocks"),
+              inArray(issueRelations.relatedIssueId, childIds),
+            ),
+          );
+        if (rels.length > 0) {
+          const blockerIds = [...new Set(rels.map((r) => r.blockerId))];
+          const blockerRows = await db
+            .select({ id: issues.id, teamId: issues.teamId })
+            .from(issues)
+            .where(inArray(issues.id, blockerIds));
+          const blockerTeam = new Map(blockerRows.map((b) => [b.id, b.teamId]));
+          const childTeam = new Map(children.map((c) => [c.id, c.teamId]));
+          for (const r of rels) {
+            const ct = childTeam.get(r.blockedChildId) ?? null;
+            const bt = blockerTeam.get(r.blockerId) ?? null;
+            if (ct !== bt) crossTeamBlockerCount += 1;
+          }
+        }
+      }
+      const byTeam: IssueOrchestrationSummary["byTeam"] = [];
+      for (const [teamId, agg] of byTeamMap) {
+        byTeam.push({
+          teamId,
+          teamName: teamId ? teamNameMap.get(teamId)?.name ?? null : null,
+          byStatus: agg.byStatus,
+          blocked: agg.blocked,
+          wip: agg.wip,
+        });
+      }
+      return {
+        parentIssueId,
+        byTeam,
+        crossTeamBlockerCount,
+        crossTeamBlockerWarning:
+          crossTeamBlockerCount > 0
+            ? `${crossTeamBlockerCount} blocked-by edge(s) involve a blocker and child on different teams; confirm with program lead if required.`
+            : null,
+      };
     },
   };
 }

@@ -11,7 +11,7 @@ const DRIZZLE_MIGRATIONS_TABLE = "__drizzle_migrations";
 const MIGRATIONS_JOURNAL_JSON = fileURLToPath(new URL("./migrations/meta/_journal.json", import.meta.url));
 
 function createUtilitySql(url: string) {
-  return postgres(url, { max: 1, onnotice: () => {} });
+  return postgres(url, { max: 1, onnotice: () => {}, connect_timeout: 20 });
 }
 
 function isSafeIdentifier(value: string): boolean {
@@ -940,6 +940,24 @@ export async function migratePostgresIfEmpty(url: string): Promise<MigrationBoot
   }
 }
 
+function withTimeout<T>(label: string, ms: number, work: () => Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    Promise.resolve()
+      .then(() => work())
+      .then(
+        (v) => {
+          clearTimeout(t);
+          resolve(v);
+        },
+        (e) => {
+          clearTimeout(t);
+          reject(e);
+        },
+      );
+  });
+}
+
 export async function ensurePostgresDatabase(
   url: string,
   databaseName: string,
@@ -948,18 +966,22 @@ export async function ensurePostgresDatabase(
     throw new Error(`Unsafe database name: ${databaseName}`);
   }
 
-  const sql = createUtilitySql(url);
-  try {
-    const existing = await sql<{ one: number }[]>`
-      select 1 as one from pg_database where datname = ${databaseName} limit 1
-    `;
-    if (existing.length > 0) return "exists";
+  return await withTimeout("ensurePostgresDatabase", 25_000, async () => {
+    const sql = createUtilitySql(url);
+    try {
+      const existing = await sql<{ one: number }[]>`
+        select 1 as one from pg_database where datname = ${databaseName} limit 1
+      `;
+      if (existing.length > 0) return "exists";
 
-    await sql.unsafe(`create database "${databaseName}" encoding 'UTF8' lc_collate 'C' lc_ctype 'C' template template0`);
-    return "created";
-  } finally {
-    await sql.end();
-  }
+      await sql.unsafe(
+        `create database "${databaseName}" encoding 'UTF8' lc_collate 'C' lc_ctype 'C' template template0`,
+      );
+      return "created";
+    } finally {
+      await sql.end();
+    }
+  });
 }
 
 export type Db = ReturnType<typeof createDb>;

@@ -229,6 +229,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
   const [workspaceMode, setWorkspaceMode] = useState<"local" | "repo" | null>(null);
   const [workspaceCwd, setWorkspaceCwd] = useState("");
   const [workspaceRepoUrl, setWorkspaceRepoUrl] = useState("");
+  const [workspaceDefaultRef, setWorkspaceDefaultRef] = useState("");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
   const commitField = (field: ProjectConfigFieldKey, data: Record<string, unknown>) => {
@@ -333,6 +334,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     onSuccess: () => {
       setWorkspaceCwd("");
       setWorkspaceRepoUrl("");
+      setWorkspaceDefaultRef("");
       setWorkspaceMode(null);
       setWorkspaceError(null);
       invalidateProject();
@@ -344,6 +346,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     onSuccess: () => {
       setWorkspaceCwd("");
       setWorkspaceRepoUrl("");
+      setWorkspaceDefaultRef("");
       setWorkspaceMode(null);
       setWorkspaceError(null);
       invalidateProject();
@@ -355,6 +358,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     onSuccess: () => {
       setWorkspaceCwd("");
       setWorkspaceRepoUrl("");
+      setWorkspaceDefaultRef("");
       setWorkspaceMode(null);
       setWorkspaceError(null);
       invalidateProject();
@@ -428,7 +432,11 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     return undefined;
   };
 
-  const persistCodebase = (patch: { cwd?: string | null; repoUrl?: string | null }) => {
+  const persistCodebase = (patch: {
+    cwd?: string | null;
+    repoUrl?: string | null;
+    defaultRef?: string | null;
+  }) => {
     const nextCwd = patch.cwd !== undefined ? patch.cwd : codebase.localFolder;
     const nextRepoUrl = patch.repoUrl !== undefined ? patch.repoUrl : codebase.repoUrl;
     if (!nextCwd && !nextRepoUrl) {
@@ -441,6 +449,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     const data: Record<string, unknown> = {
       ...(patch.cwd !== undefined ? { cwd: patch.cwd } : {}),
       ...(patch.repoUrl !== undefined ? { repoUrl: patch.repoUrl } : {}),
+      ...(patch.defaultRef !== undefined ? { defaultRef: patch.defaultRef } : {}),
       ...(deriveSourceType(nextCwd, nextRepoUrl) ? { sourceType: deriveSourceType(nextCwd, nextRepoUrl) } : {}),
       isPrimary: true,
     };
@@ -471,6 +480,14 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
   const submitRepoWorkspace = () => {
     const repoUrl = workspaceRepoUrl.trim();
     if (!repoUrl) {
+      if (primaryCodebaseWorkspace) {
+        setWorkspaceError(null);
+        updateWorkspace.mutate({
+          workspaceId: primaryCodebaseWorkspace.id,
+          data: { defaultRef: workspaceDefaultRef.trim() ? workspaceDefaultRef.trim() : null },
+        });
+        return;
+      }
       setWorkspaceError(null);
       persistCodebase({ repoUrl: null });
       return;
@@ -480,7 +497,10 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
       return;
     }
     setWorkspaceError(null);
-    persistCodebase({ repoUrl });
+    persistCodebase({
+      repoUrl,
+      defaultRef: workspaceDefaultRef.trim() ? workspaceDefaultRef.trim() : null,
+    });
   };
 
   const clearLocalWorkspace = () => {
@@ -709,6 +729,9 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                       onClick={() => {
                         setWorkspaceMode("repo");
                         setWorkspaceRepoUrl(codebase.repoUrl ?? "");
+                        setWorkspaceDefaultRef(
+                          primaryCodebaseWorkspace?.defaultRef ?? primaryCodebaseWorkspace?.repoRef ?? "",
+                        );
                         setWorkspaceError(null);
                       }}
                     >
@@ -734,6 +757,9 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                     onClick={() => {
                       setWorkspaceMode("repo");
                       setWorkspaceRepoUrl(codebase.repoUrl ?? "");
+                      setWorkspaceDefaultRef(
+                        primaryCodebaseWorkspace?.defaultRef ?? primaryCodebaseWorkspace?.repoRef ?? "",
+                      );
                       setWorkspaceError(null);
                     }}
                   >
@@ -881,7 +907,11 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                     }
                     onChange={(e) => {
                       const v = e.target.value;
-                      if (v) setWorkspaceRepoUrl(v);
+                      if (v) {
+                        setWorkspaceRepoUrl(v);
+                        const meta = pickerRepos.find((r) => r.htmlUrl === v);
+                        if (meta?.defaultBranch) setWorkspaceDefaultRef(meta.defaultBranch);
+                      }
                     }}
                   >
                     <option value="">Custom URL (type below)…</option>
@@ -907,6 +937,18 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                 onChange={(e) => setWorkspaceRepoUrl(e.target.value)}
                 placeholder="https://github.com/org/repo"
               />
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Default branch</div>
+                <input
+                  className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                  value={workspaceDefaultRef}
+                  onChange={(e) => setWorkspaceDefaultRef(e.target.value)}
+                  placeholder="main"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Used as the primary branch hint for this workspace (e.g. checkout / worktrees).
+                </p>
+              </div>
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"

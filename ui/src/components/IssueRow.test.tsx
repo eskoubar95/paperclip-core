@@ -68,6 +68,8 @@ function createIssue(overrides: Partial<Issue> = {}): Issue {
     lastExternalCommentAt: null,
     isUnreadForMe: false,
     ...overrides,
+    teamId: overrides.teamId ?? null,
+    workstreamRole: overrides.workstreamRole ?? null,
   };
 }
 

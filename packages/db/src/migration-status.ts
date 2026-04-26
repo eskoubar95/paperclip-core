@@ -1,7 +1,8 @@
 import { inspectMigrations } from "./client.js";
 import { resolveMigrationConnection } from "./migration-runtime.js";
 
-const jsonMode = process.argv.includes("--json");
+const jsonMode =
+  process.argv.includes("--json") || process.env.PAPERCLIP_MIGRATION_STATUS_JSON?.trim() === "1";
 
 function toError(error: unknown, context = "Migration status check failed"): Error {
   if (error instanceof Error) return error;
@@ -37,7 +38,11 @@ async function main(): Promise<void> {
           };
 
     if (jsonMode) {
-      console.log(JSON.stringify(payload));
+      const line = `${JSON.stringify(payload)}\n`;
+      // console.log is line-buffered on some Windows/CI stdio; dev-runner's pnpm child must emit JSON reliably
+      if (process.stdout.write(line) === false) {
+        await new Promise<void>((r) => process.stdout.once("drain", r));
+      }
       return;
     }
 

@@ -114,6 +114,8 @@ describe("issueDetailBreadcrumb", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       ...overrides,
+      teamId: overrides.teamId ?? null,
+      workstreamRole: overrides.workstreamRole ?? null,
     };
   }
 

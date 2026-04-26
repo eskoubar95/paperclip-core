@@ -883,6 +883,8 @@ export interface PluginIssuesClient {
   list(input: {
     companyId: string;
     projectId?: string;
+    teamId?: string;
+    workstreamRole?: string;
     assigneeAgentId?: string;
     status?: Issue["status"];
     limit?: number;
@@ -895,6 +897,8 @@ export interface PluginIssuesClient {
     goalId?: string;
     parentId?: string;
     inheritExecutionWorkspaceFromIssueId?: string;
+    teamId?: string;
+    workstreamRole?: string;
     title: string;
     description?: string;
     priority?: Issue["priority"];
@@ -904,7 +908,13 @@ export interface PluginIssuesClient {
     issueId: string,
     patch: Partial<Pick<
       Issue,
-      "title" | "description" | "status" | "priority" | "assigneeAgentId"
+      | "title"
+      | "description"
+      | "status"
+      | "priority"
+      | "assigneeAgentId"
+      | "teamId"
+      | "workstreamRole"
     >>,
     companyId: string,
   ): Promise<Issue>;

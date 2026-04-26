@@ -39,6 +39,7 @@ import {
   instanceSettingsService,
   issueApprovalService,
   issueService,
+  deliverIssueWebhooks,
   documentService,
   logActivity,
   projectService,
@@ -48,6 +49,7 @@ import {
 import { logger } from "../middleware/logger.js";
 import { conflict, forbidden, HttpError, notFound, unauthorized } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertCompanyPrincipalPermission } from "./company-principal-permission.js";
 import {
   assertNoAgentHostWorkspaceCommandMutation,
   collectIssueWorkspaceCommandPaths,
@@ -394,6 +396,12 @@ export function issueRoutes(
     throw unauthorized();
   }
 
+  const principalPermissionDeps = { access, agentsSvc };
+
+  async function assertCanAssignProjects(req: Request, companyId: string) {
+    await assertCompanyPrincipalPermission(req, companyId, "projects:assign", principalPermissionDeps);
+  }
+
   function requireAgentRunId(req: Request, res: Response) {
     if (req.actor.type !== "agent") return null;
     const runId = req.actor.runId?.trim();
@@ -649,6 +657,8 @@ export function issueRoutes(
       inboxArchivedByUserId,
       unreadForUserId,
       projectId: req.query.projectId as string | undefined,
+      teamId: req.query.teamId as string | undefined,
+      workstreamRole: req.query.workstreamRole as string | undefined,
       executionWorkspaceId: req.query.executionWorkspaceId as string | undefined,
       parentId: req.query.parentId as string | undefined,
       labelId: req.query.labelId as string | undefined,
@@ -755,6 +765,18 @@ export function issueRoutes(
     });
   });
 
+  router.get("/issues/:id/orchestration-summary", async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await svc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+    const summary = await svc.getOrchestrationSummary(issue.companyId, issue.id);
+    res.json(summary);
+  });
+
   router.get("/issues/:id/heartbeat-context", async (req, res) => {
     const id = req.params.id as string;
     const issue = await svc.getById(id);
@@ -787,6 +809,10 @@ export function issueRoutes(
         description: issue.description,
         status: issue.status,
         priority: issue.priority,
+        teamId: issue.teamId,
+        workstreamRole: issue.workstreamRole,
+        team: issue.team,
+        teamLead: issue.teamLead,
         projectId: issue.projectId,
         goalId: goal?.id ?? issue.goalId,
         parentId: issue.parentId,
@@ -1330,6 +1356,9 @@ export function issueRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     assertNoAgentHostWorkspaceCommandMutation(req, collectIssueWorkspaceCommandPaths(req.body));
+    if (req.body.projectId) {
+      await assertCanAssignProjects(req, companyId);
+    }
     if (req.body.assigneeAgentId || req.body.assigneeUserId) {
       await assertCanAssignTasks(req, companyId);
     }
@@ -1369,6 +1398,19 @@ export function issueRoutes(
       requestedByActorId: actor.actorId,
     });
 
+    void deliverIssueWebhooks({
+      db,
+      companyId,
+      eventKind: "issue.created",
+      payload: {
+        issue: {
+          id: issue.id,
+          teamId: issue.teamId ?? null,
+          workstreamRole: issue.workstreamRole ?? null,
+        },
+      },
+    });
+
     res.status(201).json(issue);
   });
 
@@ -1382,6 +1424,13 @@ export function issueRoutes(
     assertCompanyAccess(req, existing.companyId);
     assertNoAgentHostWorkspaceCommandMutation(req, collectIssueWorkspaceCommandPaths(req.body));
     if (!(await assertAgentRunCheckoutOwnership(req, res, existing))) return;
+
+    if (req.body.projectId !== undefined) {
+      const nextProjectId = req.body.projectId as string | null;
+      if (nextProjectId !== existing.projectId) {
+        await assertCanAssignProjects(req, existing.companyId);
+      }
+    }
 
     const actor = getActorInfo(req);
     const isClosed = isClosedIssueStatus(existing.status);
@@ -1961,6 +2010,19 @@ export function issueRoutes(
           .catch((err) => logger.warn({ err, issueId: issue.id, agentId }, "failed to wake agent on issue update"));
       }
     })();
+
+    void deliverIssueWebhooks({
+      db,
+      companyId: issue.companyId,
+      eventKind: "issue.updated",
+      payload: {
+        issue: {
+          id: issue.id,
+          teamId: issue.teamId ?? null,
+          workstreamRole: issue.workstreamRole ?? null,
+        },
+      },
+    });
 
     res.json({ ...issueResponse, comment });
   });

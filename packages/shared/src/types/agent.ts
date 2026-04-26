@@ -9,8 +9,14 @@ import type {
   PrincipalPermissionGrant,
 } from "./access.js";
 
+export type AgentPermissionSource = "explicit_grant" | "agent_creator" | "ceo_role" | "none";
+
 export interface AgentPermissions {
   canCreateAgents: boolean;
+  canCreateProjects?: boolean;
+  canAssignProjects?: boolean;
+  canManageProjectOwners?: boolean;
+  canManageProjectWorkspaces?: boolean;
 }
 
 export type AgentInstructionsBundleMode = "managed" | "external";
@@ -47,7 +53,15 @@ export interface AgentInstructionsBundle {
 
 export interface AgentAccessState {
   canAssignTasks: boolean;
-  taskAssignSource: "explicit_grant" | "agent_creator" | "ceo_role" | "none";
+  taskAssignSource: AgentPermissionSource;
+  canCreateProjects: boolean;
+  createProjectsSource: AgentPermissionSource;
+  canAssignProjects: boolean;
+  assignProjectsSource: AgentPermissionSource;
+  canManageProjectOwners: boolean;
+  manageProjectOwnersSource: AgentPermissionSource;
+  canManageProjectWorkspaces: boolean;
+  manageProjectWorkspacesSource: AgentPermissionSource;
   membership: CompanyMembership | null;
   grants: PrincipalPermissionGrant[];
 }

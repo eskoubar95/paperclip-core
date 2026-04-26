@@ -90,6 +90,7 @@ import {
   type AgentRuntimeState,
   type LiveEvent,
   type WorkspaceOperation,
+  type AgentPermissionSource,
 } from "@paperclipai/shared";
 import { redactHomePathUserSegments, redactHomePathUserSegmentsInValue } from "@paperclipai/adapter-utils";
 import { agentRouteRef } from "../lib/utils";
@@ -1565,6 +1566,13 @@ function AgentConfigurePage({
 
 /* ---- Configuration Tab ---- */
 
+function agentPermissionSourceHint(source: AgentPermissionSource) {
+  if (source === "ceo_role") return "Enabled automatically for CEO agents.";
+  if (source === "agent_creator") return "Enabled automatically while this agent can create new agents.";
+  if (source === "explicit_grant") return "Enabled via explicit company permission grant.";
+  return "Disabled unless explicitly granted.";
+}
+
 function ConfigurationTab({
   agent,
   companyId,
@@ -1639,14 +1647,22 @@ function ConfigurationTab({
   const canAssignTasks = Boolean(agent.access?.canAssignTasks);
   const taskAssignSource = agent.access?.taskAssignSource ?? "none";
   const taskAssignLocked = agent.role === "ceo" || canCreateAgents;
-  const taskAssignHint =
-    taskAssignSource === "ceo_role"
-      ? "Enabled automatically for CEO agents."
-      : taskAssignSource === "agent_creator"
-        ? "Enabled automatically while this agent can create new agents."
-        : taskAssignSource === "explicit_grant"
-          ? "Enabled via explicit company permission grant."
-          : "Disabled unless explicitly granted.";
+  const taskAssignHint = agentPermissionSourceHint(taskAssignSource);
+
+  const projectPermissionLocked = agent.role === "ceo" || canCreateAgents;
+  const canCreateProjects = Boolean(agent.access?.canCreateProjects);
+  const canAssignProjects = Boolean(agent.access?.canAssignProjects);
+  const canManageProjectOwners = Boolean(agent.access?.canManageProjectOwners);
+  const canManageProjectWorkspaces = Boolean(agent.access?.canManageProjectWorkspaces);
+
+  const currentPermissionPayload = (): AgentPermissionUpdate => ({
+    canCreateAgents,
+    canAssignTasks,
+    canCreateProjects: Boolean(agent.permissions?.canCreateProjects),
+    canAssignProjects: Boolean(agent.permissions?.canAssignProjects),
+    canManageProjectOwners: Boolean(agent.permissions?.canManageProjectOwners),
+    canManageProjectWorkspaces: Boolean(agent.permissions?.canManageProjectWorkspaces),
+  });
 
   return (
     <div className="space-y-6">
@@ -1679,6 +1695,7 @@ function ConfigurationTab({
               checked={canCreateAgents}
               onCheckedChange={() =>
                 updatePermissions.mutate({
+                  ...currentPermissionPayload(),
                   canCreateAgents: !canCreateAgents,
                   canAssignTasks: !canCreateAgents ? true : canAssignTasks,
                 })
@@ -1697,12 +1714,88 @@ function ConfigurationTab({
               checked={canAssignTasks}
               onCheckedChange={() =>
                 updatePermissions.mutate({
-                  canCreateAgents,
+                  ...currentPermissionPayload(),
                   canAssignTasks: !canAssignTasks,
                 })
               }
               disabled={updatePermissions.isPending || taskAssignLocked}
             />
+          </div>
+
+          <div className="pt-2 border-t border-border space-y-4">
+            <div className="text-xs font-medium text-muted-foreground">Projects</div>
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <div className="space-y-1">
+                <div>Create and update projects</div>
+                <p className="text-xs text-muted-foreground">
+                  {agentPermissionSourceHint(agent.access?.createProjectsSource ?? "none")}
+                </p>
+              </div>
+              <ToggleSwitch
+                checked={canCreateProjects}
+                onCheckedChange={() =>
+                  updatePermissions.mutate({
+                    ...currentPermissionPayload(),
+                    canCreateProjects: !canCreateProjects,
+                  })
+                }
+                disabled={updatePermissions.isPending || projectPermissionLocked}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <div className="space-y-1">
+                <div>Assign issues to projects</div>
+                <p className="text-xs text-muted-foreground">
+                  {agentPermissionSourceHint(agent.access?.assignProjectsSource ?? "none")}
+                </p>
+              </div>
+              <ToggleSwitch
+                checked={canAssignProjects}
+                onCheckedChange={() =>
+                  updatePermissions.mutate({
+                    ...currentPermissionPayload(),
+                    canAssignProjects: !canAssignProjects,
+                  })
+                }
+                disabled={updatePermissions.isPending || projectPermissionLocked}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <div className="space-y-1">
+                <div>Manage project owners (lead agent)</div>
+                <p className="text-xs text-muted-foreground">
+                  {agentPermissionSourceHint(agent.access?.manageProjectOwnersSource ?? "none")}
+                </p>
+              </div>
+              <ToggleSwitch
+                checked={canManageProjectOwners}
+                onCheckedChange={() =>
+                  updatePermissions.mutate({
+                    ...currentPermissionPayload(),
+                    canManageProjectOwners: !canManageProjectOwners,
+                  })
+                }
+                disabled={updatePermissions.isPending || projectPermissionLocked}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <div className="space-y-1">
+                <div>Manage project workspaces (repo / branch)</div>
+                <p className="text-xs text-muted-foreground">
+                  {agentPermissionSourceHint(agent.access?.manageProjectWorkspacesSource ?? "none")}
+                </p>
+              </div>
+              <ToggleSwitch
+                checked={canManageProjectWorkspaces}
+                onCheckedChange={() =>
+                  updatePermissions.mutate({
+                    ...currentPermissionPayload(),
+                    canManageProjectWorkspaces: !canManageProjectWorkspaces,
+                  })
+                }
+                disabled={updatePermissions.isPending || projectPermissionLocked}
+              />
+            </div>
           </div>
         </div>
       </div>

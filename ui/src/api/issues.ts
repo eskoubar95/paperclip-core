@@ -4,6 +4,7 @@ import type {
   FeedbackTargetType,
   FeedbackTrace,
   FeedbackVote,
+  IssueOrchestrationSummary,
   Issue,
   IssueAttachment,
   IssueComment,
@@ -24,6 +25,8 @@ export const issuesApi = {
     filters?: {
       status?: string;
       projectId?: string;
+      teamId?: string;
+      workstreamRole?: string;
       parentId?: string;
       assigneeAgentId?: string;
       participantAgentId?: string;
@@ -43,6 +46,8 @@ export const issuesApi = {
     const params = new URLSearchParams();
     if (filters?.status) params.set("status", filters.status);
     if (filters?.projectId) params.set("projectId", filters.projectId);
+    if (filters?.teamId) params.set("teamId", filters.teamId);
+    if (filters?.workstreamRole) params.set("workstreamRole", filters.workstreamRole);
     if (filters?.parentId) params.set("parentId", filters.parentId);
     if (filters?.assigneeAgentId) params.set("assigneeAgentId", filters.assigneeAgentId);
     if (filters?.participantAgentId) params.set("participantAgentId", filters.participantAgentId);
@@ -65,6 +70,8 @@ export const issuesApi = {
     api.post<IssueLabel>(`/companies/${companyId}/labels`, data),
   deleteLabel: (id: string) => api.delete<IssueLabel>(`/labels/${id}`),
   get: (id: string) => api.get<Issue>(`/issues/${id}`),
+  getOrchestrationSummary: (id: string) =>
+    api.get<IssueOrchestrationSummary>(`/issues/${id}/orchestration-summary`),
   markRead: (id: string) => api.post<{ id: string; lastReadAt: Date }>(`/issues/${id}/read`, {}),
   markUnread: (id: string) => api.delete<{ id: string; removed: boolean }>(`/issues/${id}/read`),
   archiveFromInbox: (id: string) =>

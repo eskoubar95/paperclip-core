@@ -151,43 +151,46 @@ export function agentRoutes(db: Db, storage: StorageService) {
     return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
   }
 
+  function resolveAgentScopedPermission(
+    agent: NonNullable<Awaited<ReturnType<typeof svc.getById>>>,
+    grants: Awaited<ReturnType<typeof access.listPrincipalGrants>>,
+    permissionKey:
+      | "tasks:assign"
+      | "projects:create"
+      | "projects:assign"
+      | "projects:manage_owner"
+      | "projects:manage_workspace",
+  ): { allowed: boolean; source: "explicit_grant" | "agent_creator" | "ceo_role" | "none" } {
+    if (agent.role === "ceo") return { allowed: true, source: "ceo_role" };
+    if (canCreateAgents(agent)) return { allowed: true, source: "agent_creator" };
+    if (grants.some((grant) => grant.permissionKey === permissionKey)) {
+      return { allowed: true, source: "explicit_grant" };
+    }
+    return { allowed: false, source: "none" };
+  }
+
   async function buildAgentAccessState(agent: NonNullable<Awaited<ReturnType<typeof svc.getById>>>) {
     const membership = await access.getMembership(agent.companyId, "agent", agent.id);
     const grants = membership
       ? await access.listPrincipalGrants(agent.companyId, "agent", agent.id)
       : [];
-    const hasExplicitTaskAssignGrant = grants.some((grant) => grant.permissionKey === "tasks:assign");
-
-    if (agent.role === "ceo") {
-      return {
-        canAssignTasks: true,
-        taskAssignSource: "ceo_role" as const,
-        membership,
-        grants,
-      };
-    }
-
-    if (canCreateAgents(agent)) {
-      return {
-        canAssignTasks: true,
-        taskAssignSource: "agent_creator" as const,
-        membership,
-        grants,
-      };
-    }
-
-    if (hasExplicitTaskAssignGrant) {
-      return {
-        canAssignTasks: true,
-        taskAssignSource: "explicit_grant" as const,
-        membership,
-        grants,
-      };
-    }
+    const taskLine = resolveAgentScopedPermission(agent, grants, "tasks:assign");
+    const createProjectsLine = resolveAgentScopedPermission(agent, grants, "projects:create");
+    const assignProjectsLine = resolveAgentScopedPermission(agent, grants, "projects:assign");
+    const manageOwnersLine = resolveAgentScopedPermission(agent, grants, "projects:manage_owner");
+    const manageWsLine = resolveAgentScopedPermission(agent, grants, "projects:manage_workspace");
 
     return {
-      canAssignTasks: false,
-      taskAssignSource: "none" as const,
+      canAssignTasks: taskLine.allowed,
+      taskAssignSource: taskLine.source,
+      canCreateProjects: createProjectsLine.allowed,
+      createProjectsSource: createProjectsLine.source,
+      canAssignProjects: assignProjectsLine.allowed,
+      assignProjectsSource: assignProjectsLine.source,
+      canManageProjectOwners: manageOwnersLine.allowed,
+      manageProjectOwnersSource: manageOwnersLine.source,
+      canManageProjectWorkspaces: manageWsLine.allowed,
+      manageProjectWorkspacesSource: manageWsLine.source,
       membership,
       grants,
     };
@@ -1849,6 +1852,7 @@ export function agentRoutes(db: Db, storage: StorageService) {
 
     const effectiveCanAssignTasks =
       agent.role === "ceo" || Boolean(agent.permissions?.canCreateAgents) || req.body.canAssignTasks;
+    const grantUserId = req.actor.type === "board" ? (req.actor.userId ?? null) : null;
     await access.ensureMembership(agent.companyId, "agent", agent.id, "member", "active");
     await access.setPrincipalPermission(
       agent.companyId,
@@ -1856,7 +1860,54 @@ export function agentRoutes(db: Db, storage: StorageService) {
       agent.id,
       "tasks:assign",
       effectiveCanAssignTasks,
-      req.actor.type === "board" ? (req.actor.userId ?? null) : null,
+      grantUserId,
+    );
+
+    const elevated = agent.role === "ceo" || Boolean(agent.permissions?.canCreateAgents);
+    const effectiveCreateProjects = elevated || (req.body.canCreateProjects ?? false);
+    const effectiveAssignProjects = elevated || (req.body.canAssignProjects ?? false);
+    const effectiveManageProjectOwners = elevated || (req.body.canManageProjectOwners ?? false);
+    const effectiveManageProjectWorkspaces = elevated || (req.body.canManageProjectWorkspaces ?? false);
+
+    await access.setPrincipalPermission(
+      agent.companyId,
+      "agent",
+      agent.id,
+      "projects:create",
+      effectiveCreateProjects,
+      grantUserId,
+    );
+    await access.setPrincipalPermission(
+      agent.companyId,
+      "agent",
+      agent.id,
+      "projects:update",
+      effectiveCreateProjects,
+      grantUserId,
+    );
+    await access.setPrincipalPermission(
+      agent.companyId,
+      "agent",
+      agent.id,
+      "projects:assign",
+      effectiveAssignProjects,
+      grantUserId,
+    );
+    await access.setPrincipalPermission(
+      agent.companyId,
+      "agent",
+      agent.id,
+      "projects:manage_owner",
+      effectiveManageProjectOwners,
+      grantUserId,
+    );
+    await access.setPrincipalPermission(
+      agent.companyId,
+      "agent",
+      agent.id,
+      "projects:manage_workspace",
+      effectiveManageProjectWorkspaces,
+      grantUserId,
     );
 
     const actor = getActorInfo(req);
@@ -1872,6 +1923,10 @@ export function agentRoutes(db: Db, storage: StorageService) {
       details: {
         canCreateAgents: agent.permissions?.canCreateAgents ?? false,
         canAssignTasks: effectiveCanAssignTasks,
+        canCreateProjects: effectiveCreateProjects,
+        canAssignProjects: effectiveAssignProjects,
+        canManageProjectOwners: effectiveManageProjectOwners,
+        canManageProjectWorkspaces: effectiveManageProjectWorkspaces,
       },
     });
 

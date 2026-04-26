@@ -15,8 +15,9 @@ import {
   issueExecutionDecisions,
   issues,
   issueComments,
+  projects,
 } from "@paperclipai/db";
-import { isUuidLike, normalizeAgentUrlKey } from "@paperclipai/shared";
+import { isUuidLike, normalizeAgentUrlKey, type UpdateAgentPermissions } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { normalizeAgentPermissions } from "./agent-permissions.js";
 import { REDACTED_EVENT_VALUE, sanitizeRecord } from "../redaction.js";
@@ -467,6 +468,11 @@ export function agentService(db: Db) {
         .where(eq(agents.id, id));
 
       await db
+        .update(projects)
+        .set({ leadAgentId: null, updatedAt: new Date() })
+        .where(eq(projects.leadAgentId, id));
+
+      await db
         .update(agentApiKeys)
         .set({ revokedAt: new Date() })
         .where(eq(agentApiKeys.agentId, id));
@@ -522,7 +528,7 @@ export function agentService(db: Db) {
       return updated ? normalizeAgentRow(updated) : null;
     },
 
-    updatePermissions: async (id: string, permissions: { canCreateAgents: boolean }) => {
+    updatePermissions: async (id: string, permissions: UpdateAgentPermissions) => {
       const existing = await getById(id);
       if (!existing) return null;
 

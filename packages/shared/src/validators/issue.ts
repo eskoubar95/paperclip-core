@@ -7,6 +7,7 @@ import {
   ISSUE_PRIORITIES,
   ISSUE_STATUSES,
 } from "../constants.js";
+import { issueWorkstreamRoleSchema } from "./team.js";
 
 export const ISSUE_EXECUTION_WORKSPACE_PREFERENCES = [
   "inherit",
@@ -114,6 +115,8 @@ export const issueExecutionStateSchema = z.object({
 });
 
 export const createIssueSchema = z.object({
+  teamId: z.string().uuid().optional().nullable(),
+  workstreamRole: issueWorkstreamRoleSchema.optional().nullable(),
   projectId: z.string().uuid().optional().nullable(),
   projectWorkspaceId: z.string().uuid().optional().nullable(),
   goalId: z.string().uuid().optional().nullable(),

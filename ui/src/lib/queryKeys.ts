@@ -55,6 +55,7 @@ export const queryKeys = {
     liveRuns: (issueId: string) => ["issues", "live-runs", issueId] as const,
     activeRun: (issueId: string) => ["issues", "active-run", issueId] as const,
     workProducts: (issueId: string) => ["issues", "work-products", issueId] as const,
+    orchestrationSummary: (issueId: string) => ["issues", "orchestration-summary", issueId] as const,
   },
   routines: {
     list: (companyId: string) => ["routines", companyId] as const,
@@ -74,6 +75,12 @@ export const queryKeys = {
   projects: {
     list: (companyId: string) => ["projects", companyId] as const,
     detail: (id: string) => ["projects", "detail", id] as const,
+  },
+  teams: {
+    list: (companyId: string) => ["teams", companyId] as const,
+    memberships: (companyId: string, teamId: string) => ["teams", companyId, teamId, "memberships"] as const,
+    issueTemplates: (companyId: string) => ["issue-templates", companyId] as const,
+    webhooks: (companyId: string) => ["issue-webhooks", companyId] as const,
   },
   goals: {
     list: (companyId: string) => ["goals", companyId] as const,

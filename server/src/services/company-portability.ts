@@ -33,6 +33,7 @@ import type {
 import {
   ISSUE_PRIORITIES,
   ISSUE_STATUSES,
+  ISSUE_WORKSTREAM_ROLES,
   PROJECT_STATUSES,
   ROUTINE_CATCH_UP_POLICIES,
   ROUTINE_CONCURRENCY_POLICIES,
@@ -64,6 +65,7 @@ import { validateCron } from "./cron.js";
 import { issueService } from "./issues.js";
 import { projectService } from "./projects.js";
 import { routineService } from "./routines.js";
+import { teamService } from "./teams.js";
 import { secretService } from "./secrets.js";
 
 /** Build OrgNode tree from manifest agent list (slug + reportsToSlug). */
@@ -2671,6 +2673,8 @@ function buildManifestFromPackageFiles(
         ? extension.assigneeAdapterOverrides
         : null,
       metadata: isPlainRecord(extension.metadata) ? extension.metadata : null,
+      teamSlug: asString(extension.teamSlug),
+      workstreamRole: asString(extension.workstreamRole),
     });
     if (frontmatter.kind && frontmatter.kind !== "task") {
       warnings.push(`Task markdown ${taskPath} does not declare kind: task in frontmatter.`);
@@ -3111,6 +3115,8 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     const selectedIssueRows = Array.from(selectedIssues.values())
       .filter((issue): issue is NonNullable<typeof issue> => issue != null)
       .sort((left, right) => (left.identifier ?? left.title).localeCompare(right.identifier ?? right.title));
+    const teamsForExport = selectedIssueRows.length > 0 ? await teamService(db).list(companyId, true) : [];
+    const teamSlugById = new Map(teamsForExport.map((t) => [t.id, t.slug]));
     const selectedRoutineSummaries = Array.from(selectedRoutines.values())
       .sort((left, right) => left.title.localeCompare(right.title));
     const selectedRoutineRows = (
@@ -3390,6 +3396,8 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         projectWorkspaceKey: projectWorkspaceKey ?? undefined,
         executionWorkspaceSettings: issue.executionWorkspaceSettings ?? undefined,
         assigneeAdapterOverrides: issue.assigneeAdapterOverrides ?? undefined,
+        teamSlug: issue.teamId ? teamSlugById.get(issue.teamId) ?? undefined : undefined,
+        workstreamRole: issue.workstreamRole ?? undefined,
       });
       paperclipTasksOut[taskSlug] = isPlainRecord(extension) ? extension : {};
     }
@@ -4377,6 +4385,8 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
 
     if (include.issues) {
       const routines = routineService(db);
+      const teamsForImport = await teamService(db).list(targetCompany.id, true);
+      const importTeamIdBySlug = new Map(teamsForImport.map((t) => [t.slug, t.id]));
       for (const manifestIssue of sourceManifest.issues) {
         const markdownRaw = readPortableTextFile(plan.source.files, manifestIssue.path);
         const parsed = markdownRaw ? parseFrontmatterMarkdown(markdownRaw) : null;
@@ -4489,6 +4499,23 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           warnings.push(`Task ${manifestIssue.slug} was downgraded to todo because its assignee could not be imported as assignable work.`);
           issueStatus = "todo";
         }
+        const resolvedImportTeamId =
+          manifestIssue.teamSlug ? importTeamIdBySlug.get(manifestIssue.teamSlug) ?? null : null;
+        if (manifestIssue.teamSlug && !resolvedImportTeamId) {
+          warnings.push(
+            `Task ${manifestIssue.slug} references unknown team slug "${manifestIssue.teamSlug}"; team not applied.`,
+          );
+        }
+        let importWorkstream: (typeof ISSUE_WORKSTREAM_ROLES)[number] | null = null;
+        if (manifestIssue.workstreamRole) {
+          if (ISSUE_WORKSTREAM_ROLES.includes(manifestIssue.workstreamRole as (typeof ISSUE_WORKSTREAM_ROLES)[number])) {
+            importWorkstream = manifestIssue.workstreamRole as (typeof ISSUE_WORKSTREAM_ROLES)[number];
+          } else {
+            warnings.push(
+              `Task ${manifestIssue.slug} has unknown workstreamRole "${manifestIssue.workstreamRole}"; skipped.`,
+            );
+          }
+        }
         await issues.create(targetCompany.id, {
           projectId,
           projectWorkspaceId,
@@ -4503,6 +4530,8 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           assigneeAdapterOverrides: manifestIssue.assigneeAdapterOverrides,
           executionWorkspaceSettings: manifestIssue.executionWorkspaceSettings,
           labelIds: manifestIssue.labelIds ?? [],
+          teamId: resolvedImportTeamId,
+          workstreamRole: importWorkstream,
         });
       }
     }
