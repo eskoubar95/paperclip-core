@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
@@ -9,6 +11,8 @@ import {
 } from "@paperclipai/db";
 import { notFound, unprocessable } from "../errors.js";
 import type { secretService } from "./secrets.js";
+import { mcpOAuthService } from "./mcp-oauth.js";
+import { MCP_OAUTH_KNOWN } from "./mcp-oauth-providers.js";
 
 type SecretsSvc = ReturnType<typeof secretService>;
 
@@ -37,7 +41,7 @@ function asRecord(v: unknown): Record<string, unknown> {
  * Map provider + optional custom config to Cursor mcp.json entry.
  * @see https://cursor.com/docs/mcp
  */
-function buildMcpServerEntry(
+export function buildMcpServerEntry(
   providerKey: string,
   token: string | null,
   custom: Record<string, unknown>,
@@ -93,7 +97,11 @@ async function verifyHttpMcpUrl(url: string, token: string): Promise<string | nu
   return null;
 }
 
+type McpRow = typeof companyMcpIntegrations.$inferSelect;
+
 export function companyMcpService(db: Db, secretsSvc: SecretsSvc) {
+  const oauthSvc = mcpOAuthService(db, secretsSvc);
+
   async function getTokenValue(companyId: string, tokenSecretId: string | null): Promise<string | null> {
     if (!tokenSecretId) return null;
     try {
@@ -101,6 +109,28 @@ export function companyMcpService(db: Db, secretsSvc: SecretsSvc) {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Static vault token, or for OAuth rows the (possibly refreshed) access token cache.
+   */
+  async function resolveTokenForMcp(companyId: string, row: McpRow): Promise<string | null> {
+    if (row.oauthProvider) {
+      await oauthSvc.ensureFreshAccessForIntegration(companyId, row.id);
+      const [fresh] = await db
+        .select()
+        .from(companyMcpIntegrations)
+        .where(
+          and(
+            eq(companyMcpIntegrations.companyId, companyId),
+            eq(companyMcpIntegrations.id, row.id),
+          ),
+        )
+        .limit(1);
+      return fresh?.accessTokenCache ?? null;
+    }
+    if (!row.tokenSecretId) return null;
+    return await getTokenValue(companyId, row.tokenSecretId);
   }
 
   return {
@@ -117,6 +147,12 @@ export function companyMcpService(db: Db, secretsSvc: SecretsSvc) {
         providerKey: r.providerKey,
         config: r.config,
         hasToken: Boolean(r.tokenSecretId),
+        oauthProvider: r.oauthProvider,
+        /** True when OAuth completed at least once (cached access or stored refresh). */
+        oauthConnected: Boolean(
+          r.oauthProvider && (r.accessTokenCache || r.refreshTokenSecretId),
+        ),
+        tokenExpiresAt: r.tokenExpiresAt,
         enabled: r.enabled,
         lastVerifiedAt: r.lastVerifiedAt,
         lastError: r.lastError,
@@ -140,6 +176,11 @@ export function companyMcpService(db: Db, secretsSvc: SecretsSvc) {
         config: row.config,
         hasToken: Boolean(row.tokenSecretId),
         tokenSecretId: row.tokenSecretId,
+        oauthProvider: row.oauthProvider,
+        oauthConnected: Boolean(
+          row.oauthProvider && (row.accessTokenCache || row.refreshTokenSecretId),
+        ),
+        tokenExpiresAt: row.tokenExpiresAt,
         enabled: row.enabled,
         lastVerifiedAt: row.lastVerifiedAt,
         lastError: row.lastError,
@@ -157,6 +198,7 @@ export function companyMcpService(db: Db, secretsSvc: SecretsSvc) {
         config?: Record<string, unknown>;
         token?: string | null;
         enabled?: boolean;
+        oauthProvider?: string | null;
       },
       actor: { userId: string | null; agentId: string | null },
     ) => {
@@ -166,6 +208,24 @@ export function companyMcpService(db: Db, secretsSvc: SecretsSvc) {
       }
       if (!MCP_PROVIDER_KEYS.includes(input.providerKey as McpProviderKey)) {
         throw unprocessable(`Invalid providerKey. Use one of: ${MCP_PROVIDER_KEYS.join(", ")}`);
+      }
+
+      const rawOauth = input.oauthProvider?.trim() || "";
+      if (rawOauth && !(MCP_OAUTH_KNOWN as readonly string[]).includes(rawOauth)) {
+        throw unprocessable(`Invalid oauthProvider. Use one of: ${MCP_OAUTH_KNOWN.join(", ")}`);
+      }
+      const oauthProvider = rawOauth
+        ? (rawOauth as (typeof MCP_OAUTH_KNOWN)[number])
+        : null;
+      if (oauthProvider && input.providerKey !== "http_bearer") {
+        throw unprocessable("OAuth integrations must use providerKey http_bearer");
+      }
+      const cfgPreview = asRecord(input.config ?? {});
+      if (oauthProvider) {
+        const url = typeof cfgPreview.url === "string" && cfgPreview.url.trim() ? cfgPreview.url.trim() : null;
+        if (!url) {
+          throw unprocessable("OAuth HTTP MCP requires config.url (remote MCP endpoint)");
+        }
       }
 
       const dup = await db
@@ -189,8 +249,8 @@ export function companyMcpService(db: Db, secretsSvc: SecretsSvc) {
         );
         tokenSecretId = created.id;
       } else {
-        if (!input.token && input.providerKey === "http_bearer") {
-          throw unprocessable("A token is required for http_bearer");
+        if (!oauthProvider && !input.token && input.providerKey === "http_bearer") {
+          throw unprocessable("A token is required for http_bearer (unless using OAuth via oauthProvider)");
         }
       }
 
@@ -203,6 +263,7 @@ export function companyMcpService(db: Db, secretsSvc: SecretsSvc) {
           providerKey: input.providerKey,
           config: input.config ?? {},
           tokenSecretId,
+          oauthProvider,
           enabled: input.enabled ?? true,
         })
         .returning();
@@ -275,12 +336,12 @@ export function companyMcpService(db: Db, secretsSvc: SecretsSvc) {
         .where(and(eq(companyMcpIntegrations.companyId, companyId), eq(companyMcpIntegrations.id, id)))
         .then((rows) => rows[0] ?? null);
       if (!row) return { ok: false as const, error: "not_found" as const };
-      const token = await getTokenValue(companyId, row.tokenSecretId);
+      const token = await resolveTokenForMcp(companyId, row);
       const cfg = asRecord(row.config);
       let err: string | null = null;
       if (row.providerKey === "http_bearer") {
         if (!token) {
-          err = "No token";
+          err = row.oauthProvider ? "OAuth not connected or token unavailable" : "No token";
         } else {
           const url = typeof cfg.url === "string" && cfg.url.trim() ? cfg.url.trim() : null;
           if (url) err = await verifyHttpMcpUrl(url, token);
@@ -309,9 +370,18 @@ export function companyMcpService(db: Db, secretsSvc: SecretsSvc) {
       const mcpServers: Record<string, unknown> = {};
       for (const row of rows) {
         if (!row.enabled) continue;
-        const token = await getTokenValue(companyId, row.tokenSecretId);
+        const token = await resolveTokenForMcp(companyId, row);
         const cfg = asRecord(row.config);
         try {
+          if (row.providerKey === "http_bearer" && !token) {
+            mcpServers[row.key] = {
+              error: "oauth_not_connected",
+              message: row.oauthProvider
+                ? "Connect OAuth in company MCP settings"
+                : "Missing bearer token",
+            };
+            continue;
+          }
           mcpServers[row.key] = buildMcpServerEntry(row.providerKey, token, cfg);
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);
@@ -319,6 +389,61 @@ export function companyMcpService(db: Db, secretsSvc: SecretsSvc) {
         }
       }
       return { mcpServers };
+    },
+
+    /**
+     * Write agent-scoped `.cursor/mcp.json` under run cwd for Cursor CLI (OAuth access tokens resolved).
+     */
+    materializeAgentCursorMcp: async (companyId: string, agentId: string, runCwd: string) => {
+      const agent = await db
+        .select()
+        .from(agents)
+        .where(and(eq(agents.id, agentId), eq(agents.companyId, companyId)))
+        .then((r) => r[0] ?? null);
+      if (!agent) return;
+      const bindings = await db
+        .select()
+        .from(agentMcpBindings)
+        .where(eq(agentMcpBindings.agentId, agentId));
+      if (bindings.length === 0) return;
+
+      const mcpIds = bindings.map((b) => b.mcpIntegrationId);
+      const rows = await db
+        .select()
+        .from(companyMcpIntegrations)
+        .where(
+          and(
+            eq(companyMcpIntegrations.companyId, companyId),
+            inArray(companyMcpIntegrations.id, mcpIds),
+            eq(companyMcpIntegrations.enabled, true),
+          ),
+        )
+        .orderBy(companyMcpIntegrations.key);
+
+      const mcpServers: Record<string, unknown> = {};
+      for (const row of rows) {
+        const token = await resolveTokenForMcp(companyId, row);
+        const cfg = asRecord(row.config);
+        try {
+          if (row.providerKey === "http_bearer" && !token) {
+            mcpServers[row.key] = {
+              error: "oauth_not_connected",
+              message: row.oauthProvider
+                ? "Connect OAuth in company MCP settings"
+                : "Missing bearer token",
+            };
+            continue;
+          }
+          mcpServers[row.key] = buildMcpServerEntry(row.providerKey, token, cfg);
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          mcpServers[row.key] = { error: "configuration_invalid", message };
+        }
+      }
+
+      const mcpJsonPath = join(runCwd, ".cursor", "mcp.json");
+      await mkdir(join(runCwd, ".cursor"), { recursive: true });
+      await writeFile(mcpJsonPath, JSON.stringify({ mcpServers }, null, 2), "utf-8");
     },
 
     setAgentBindings: async (

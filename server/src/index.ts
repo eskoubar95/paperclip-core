@@ -45,6 +45,7 @@ import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
 import { initTelemetry, getTelemetryClient } from "./telemetry.js";
+import { startMcpTokenRefresher } from "./services/mcp-token-refresher.js";
 
 type BetterAuthSessionUser = {
   id: string;
@@ -697,7 +698,9 @@ export async function startServer(): Promise<StartedServer> {
         });
     }, config.heartbeatSchedulerIntervalMs);
   }
-  
+
+  startMcpTokenRefresher(db as any);
+
   if (config.databaseBackupEnabled) {
     const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
     const settingsSvc = instanceSettingsService(db);

@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { companyMcpApi, type McpProviderKey } from "../api/company-mcp";
+import { companyMcpApi, type McpOauthProviderId, type McpProviderKey } from "../api/company-mcp";
 import { queryKeys } from "../lib/queryKeys";
 import { useToastActions } from "../context/ToastContext";
 import { Button } from "@/components/ui/button";
 import { Field } from "./agent-config-primitives";
 import { ApiError } from "../api/client";
+import { cn } from "../lib/utils";
 
 const PROVIDERS: { id: McpProviderKey; label: string; hint: string }[] = [
   {
@@ -28,6 +29,7 @@ export function CompanyMcpSettings({ companyId }: { companyId: string }) {
   const [key, setKey] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [providerKey, setProviderKey] = useState<McpProviderKey>("custom_stdio");
+  const [oauthMode, setOauthMode] = useState<"none" | McpOauthProviderId>("none");
   const [token, setToken] = useState("");
   const [configJson, setConfigJson] = useState("{}\n");
   const [newTokenName, setNewTokenName] = useState("Local dev machine");
@@ -37,6 +39,25 @@ export function CompanyMcpSettings({ companyId }: { companyId: string }) {
     queryKey: queryKeys.companyMcp.integrations(companyId),
     queryFn: () => companyMcpApi.listIntegrations(companyId).then((r) => r.integrations),
   });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get("mcp_oauth");
+    if (v === "ok") {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.companyMcp.integrations(companyId) });
+      pushToast({ title: "MCP connected", body: "OAuth completed.", tone: "success" });
+      params.delete("mcp_oauth");
+      const q = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${q ? `?${q}` : ""}`);
+    } else if (v === "error") {
+      const reason = params.get("reason");
+      pushToast({ title: "OAuth failed", body: reason ?? "Unknown error", tone: "error" });
+      params.delete("mcp_oauth");
+      params.delete("reason");
+      const q = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${q ? `?${q}` : ""}`);
+    }
+  }, [companyId, pushToast, queryClient]);
 
   const { data: syncTokens } = useQuery({
     queryKey: queryKeys.companyMcp.syncTokens(companyId),
@@ -58,6 +79,7 @@ export function CompanyMcpSettings({ companyId }: { companyId: string }) {
         token: token.trim() || null,
         config,
         enabled: true,
+        oauthProvider: oauthMode === "none" ? null : oauthMode,
       });
     },
     onSuccess: () => {
@@ -65,6 +87,7 @@ export function CompanyMcpSettings({ companyId }: { companyId: string }) {
       setKey("");
       setDisplayName("");
       setToken("");
+      setOauthMode("none");
       setConfigJson("{}\n");
       pushToast({ title: "MCP added", body: "Integration created.", tone: "success" });
     },
@@ -118,8 +141,47 @@ export function CompanyMcpSettings({ companyId }: { companyId: string }) {
     },
   });
 
+  const connectOAuth = useMutation({
+    mutationFn: (integrationId: string) => companyMcpApi.initiateOAuth(companyId, integrationId),
+    onSuccess: (data) => {
+      const popup = window.open(data.authUrl, "mcp_oauth", "width=600,height=700");
+      if (!popup) {
+        pushToast({ title: "Pop-up blocked", body: "Allow pop-ups to complete OAuth.", tone: "error" });
+        return;
+      }
+      const poll = setInterval(() => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.companyMcp.integrations(companyId) });
+      }, 2000);
+      setTimeout(() => clearInterval(poll), 60_000);
+    },
+    onError: (e) => {
+      pushToast({
+        title: "Could not start OAuth",
+        body: e instanceof Error ? e.message : "Error",
+        tone: "error",
+      });
+    },
+  });
+
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
   const bundleUrl = `${baseUrl}/api/companies/${encodeURIComponent(companyId)}/mcp/cursor-mcp.json`;
+
+  const parsedConfig = (() => {
+    try {
+      return JSON.parse(configJson || "{}") as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  })();
+  const hasConfigUrl =
+    typeof parsedConfig?.url === "string" && (parsedConfig.url as string).trim().length > 0;
+  const canCreate =
+    Boolean(key.trim() && displayName.trim()) &&
+    (providerKey === "http_bearer"
+      ? oauthMode !== "none"
+        ? hasConfigUrl
+        : token.trim().length > 0
+      : true);
 
   return (
     <div className="space-y-4" data-testid="company-mcp-section">
@@ -134,6 +196,12 @@ export function CompanyMcpSettings({ companyId }: { companyId: string }) {
         <code className="text-xs">Sync-PaperclipMcp.ps1</code> (or curl) to write{" "}
         <code className="text-xs">%USERPROFILE%\.cursor\mcp.json</code> with those secrets so
         Cursor does not need a browser at run time. The web UI does not write that file directly.
+      </p>
+      <p className="text-xs text-muted-foreground mt-2 max-w-2xl">
+        <strong>For hosted OAuth services</strong> (Supabase, Notion, Context7 remote): configure them
+        directly in <strong>Cursor Settings → MCP</strong>. Use Paperclip for static credentials you
+        want to share company-wide (connection strings, API keys, internal integration tokens). See{" "}
+        <code className="text-xs">doc/MCP-CONNECTORS.md</code> for guidance.
       </p>
 
       <div className="rounded-md border border-border px-4 py-3 space-y-3">
@@ -156,10 +224,33 @@ export function CompanyMcpSettings({ companyId }: { companyId: string }) {
             />
           </Field>
         </div>
+        <Field label="Hosted OAuth (optional)">
+          <select
+            className="w-full max-w-md rounded border border-border bg-background px-2 py-1.5 text-sm"
+            value={oauthMode}
+            onChange={(e) => {
+              const v = e.target.value as "none" | McpOauthProviderId;
+              setOauthMode(v);
+              if (v !== "none") {
+                setProviderKey("http_bearer");
+              }
+            }}
+          >
+            <option value="none">None (static token)</option>
+            <option value="notion">Notion (OAuth — set server env for client id/secret)</option>
+            <option value="context7">Context7 (OAuth)</option>
+          </select>
+          <p className="text-xs text-muted-foreground mt-1">
+            When set, use provider <span className="font-medium">HTTP (Bearer)</span> with a remote{" "}
+            <code className="text-xs">url</code> in config, then use <strong>Connect</strong> on the integration
+            to authorize. Static tokens are not required for OAuth.
+          </p>
+        </Field>
         <Field label="Provider">
           <select
             className="w-full max-w-md rounded border border-border bg-background px-2 py-1.5 text-sm"
             value={providerKey}
+            disabled={oauthMode !== "none"}
             onChange={(e) => setProviderKey(e.target.value as McpProviderKey)}
           >
             {PROVIDERS.map((p) => (
@@ -172,14 +263,20 @@ export function CompanyMcpSettings({ companyId }: { companyId: string }) {
             {PROVIDERS.find((p) => p.id === providerKey)?.hint}
           </p>
         </Field>
-        <Field label="Token (stored encrypted)">
+        <Field
+          label={oauthMode === "none" ? "Token (stored encrypted)" : "Token (optional static override)"}
+        >
           <input
             type="password"
             className="w-full rounded border border-border bg-background px-2 py-1.5 text-sm"
             value={token}
             onChange={(e) => setToken(e.target.value)}
             autoComplete="off"
-            placeholder="API key, PAT, or bearer (after connect / provider docs)"
+            placeholder={
+              oauthMode === "none"
+                ? "API key, PAT, or bearer (after connect / provider docs)"
+                : "Leave empty to use OAuth access token at run time"
+            }
           />
         </Field>
         <Field label="Extra config (JSON)">
@@ -193,7 +290,7 @@ export function CompanyMcpSettings({ companyId }: { companyId: string }) {
         <Button
           size="sm"
           onClick={() => createInt.mutate()}
-          disabled={createInt.isPending || !key.trim() || !displayName.trim()}
+          disabled={createInt.isPending || !canCreate}
         >
           {createInt.isPending ? "Adding…" : "Add integration"}
         </Button>
@@ -223,7 +320,30 @@ export function CompanyMcpSettings({ companyId }: { companyId: string }) {
                     {i.lastError ? ` · ${i.lastError}` : ""}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  {i.oauthProvider && !i.oauthConnected && (
+                    <Button
+                      size="sm"
+                      onClick={() => connectOAuth.mutate(i.id)}
+                      disabled={connectOAuth.isPending}
+                    >
+                      Connect {i.oauthProvider}
+                    </Button>
+                  )}
+                  {i.oauthProvider && i.oauthConnected && (
+                    <span
+                      className={cn(
+                        "text-xs px-2 py-0.5 rounded",
+                        i.tokenExpiresAt && new Date(i.tokenExpiresAt) > new Date()
+                          ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+                          : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+                      )}
+                    >
+                      {i.tokenExpiresAt && new Date(i.tokenExpiresAt) > new Date()
+                        ? "OAuth connected"
+                        : "Token refresh pending"}
+                    </span>
+                  )}
                   <Button size="sm" variant="outline" onClick={() => verifyM.mutate(i.id)} disabled={verifyM.isPending}>
                     Test
                   </Button>
