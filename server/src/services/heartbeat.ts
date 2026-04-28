@@ -32,7 +32,6 @@ import { getTelemetryClient } from "../telemetry.js";
 import { companySkillService } from "./company-skills.js";
 import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
 import { secretService } from "./secrets.js";
-import { companyMcpService } from "./company-mcp.js";
 import { resolveDefaultAgentWorkspaceDir, resolveManagedProjectWorkspaceDir } from "../home-paths.js";
 import {
   buildHeartbeatRunIssueComment,
@@ -1498,7 +1497,6 @@ export function heartbeatService(db: Db) {
 
   const runLogStore = getRunLogStore();
   const secretsSvc = secretService(db);
-  const companyMcp = companyMcpService(db, secretsSvc);
   const companySkills = companySkillService(db);
   const issuesSvc = issueService(db);
   const executionWorkspacesSvc = executionWorkspaceService(db);
@@ -3869,21 +3867,6 @@ export function heartbeatService(db: Db) {
           }
         } catch (err) {
           logger.warn({ err, runId: run.id }, "failed to build shared knowledge context pack");
-        }
-      }
-
-      if (agent.adapterType === "cursor") {
-        try {
-          await companyMcp.materializeAgentCursorMcp(
-            agent.companyId,
-            agent.id,
-            executionWorkspace.cwd,
-          );
-        } catch (err) {
-          logger.warn(
-            { err, runId: run.id, agentId: agent.id },
-            "failed to materialize agent .cursor/mcp.json",
-          );
         }
       }
 

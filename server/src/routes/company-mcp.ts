@@ -1,14 +1,11 @@
 import type { Request } from "express";
 import { Router as createRouter } from "express";
 import type { Db } from "@paperclipai/db";
-import { companies } from "@paperclipai/db";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { validate } from "../middleware/validate.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
 import { secretService } from "../services/secrets.js";
 import { companyMcpService, MCP_PROVIDER_KEYS } from "../services/company-mcp.js";
-import { mcpOAuthService } from "../services/mcp-oauth.js";
 
 const createMcpSchema = z.object({
   key: z.string().min(1).max(64),
@@ -17,11 +14,6 @@ const createMcpSchema = z.object({
   config: z.record(z.unknown()).optional(),
   token: z.string().optional().nullable(),
   enabled: z.boolean().optional(),
-  oauthProvider: z.enum(["notion", "context7"]).optional().nullable(),
-});
-
-const oauthConnectSchema = z.object({
-  integrationId: z.string().uuid(),
 });
 
 const updateMcpSchema = z.object({
@@ -56,7 +48,6 @@ export function companyMcpRoutes(db: Db) {
   const router = createRouter();
   const secretsSvc = secretService(db);
   const mcp = companyMcpService(db, secretsSvc);
-  const oauthSvc = mcpOAuthService(db, secretsSvc);
 
   router.get("/:companyId/mcp/integrations", async (req, res) => {
     assertBoard(req);
@@ -70,51 +61,8 @@ export function companyMcpRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const body = req.body as z.infer<typeof createMcpSchema>;
-    const row = await mcp.create(companyId, { ...body, oauthProvider: body.oauthProvider ?? null }, boardActor(req));
+    const row = await mcp.create(companyId, body, boardActor(req));
     res.status(201).json({ integration: row });
-  });
-
-  router.post(
-    "/:companyId/mcp/oauth/connect",
-    validate(oauthConnectSchema),
-    async (req, res) => {
-      assertBoard(req);
-      const companyId = req.params.companyId as string;
-      assertCompanyAccess(req, companyId);
-      const { integrationId } = req.body as z.infer<typeof oauthConnectSchema>;
-      const out = await oauthSvc.initiateOAuth(companyId, integrationId, boardActor(req));
-      res.json({ authUrl: out.authUrl, integrationId: out.integrationId });
-    },
-  );
-
-  router.get("/:companyId/mcp/oauth/callback/:integrationId", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    const integrationId = req.params.integrationId as string;
-    const code = typeof req.query.code === "string" ? req.query.code : null;
-    const state = typeof req.query.state === "string" ? req.query.state : null;
-    if (!code || !state) {
-      res.status(400).send("Missing code or state");
-      return;
-    }
-    const actor =
-      req.actor.type === "board"
-        ? { userId: req.actor.userId ?? null, agentId: null as string | null }
-        : { userId: null as string | null, agentId: null as string | null };
-    const result = await oauthSvc.handleCallback(companyId, integrationId, code, state, actor);
-    const [co] = await db
-      .select({ issuePrefix: companies.issuePrefix })
-      .from(companies)
-      .where(eq(companies.id, companyId))
-      .limit(1);
-    const prefix = co?.issuePrefix ? encodeURIComponent(co.issuePrefix) : "PAP";
-    if (result.ok) {
-      res.redirect(302, `/${prefix}/company/settings?mcp_oauth=ok`);
-    } else {
-      res.redirect(
-        302,
-        `/${prefix}/company/settings?mcp_oauth=error&reason=${encodeURIComponent(result.error)}`,
-      );
-    }
   });
 
   router.patch(

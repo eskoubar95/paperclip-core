@@ -2,8 +2,6 @@ import { api } from "./client";
 
 export type McpProviderKey = "http_bearer" | "custom_stdio";
 
-export type McpOauthProviderId = "notion" | "context7";
-
 export type CompanyMcpIntegration = {
   id: string;
   key: string;
@@ -11,10 +9,6 @@ export type CompanyMcpIntegration = {
   providerKey: string;
   config: Record<string, unknown>;
   hasToken: boolean;
-  oauthProvider: string | null;
-  /** OAuth (or first token) completed — access/refresh available for hosted OAuth MCP. */
-  oauthConnected: boolean;
-  tokenExpiresAt: string | null;
   enabled: boolean;
   lastVerifiedAt: string | null;
   lastError: string | null;
@@ -52,7 +46,6 @@ export const companyMcpApi = {
       config?: Record<string, unknown>;
       token?: string | null;
       enabled?: boolean;
-      oauthProvider?: McpOauthProviderId | null;
     },
   ) => api.post<{ integration: CompanyMcpIntegration }>(`/companies/${enc(companyId)}/mcp/integrations`, body),
 
@@ -103,9 +96,4 @@ export const companyMcpApi = {
     bindings: Array<{ mcpIntegrationId: string; permission: "read" | "write" | "full" }>,
   ) =>
     api.put<{ ok: true }>(`/companies/${enc(companyId)}/agents/${enc(agentId)}/mcp-bindings`, { bindings }),
-
-  initiateOAuth: (companyId: string, integrationId: string) =>
-    api.post<{ authUrl: string; integrationId: string }>(`/companies/${enc(companyId)}/mcp/oauth/connect`, {
-      integrationId,
-    }),
 };
